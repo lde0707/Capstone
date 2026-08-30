@@ -1,0 +1,719 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+namespace DigGame
+{
+    public enum GameState
+    {
+        Day = 0,     // 낮 — 수집
+        Night = 1,   // 밤 — 상점/정비 (시간 정지)
+        Won = 2,
+        Lost = 3
+    }
+
+    /// <summary>게임 전체의 허브. 일일 사이클/경제/광산/시설/펫을 관리한다.</summary>
+    public class GameManager : MonoBehaviour
+    {
+        public static GameManager Instance { get; private set; }
+
+        public WorldGrid Grid { get; private set; }
+        public WorldView View { get; private set; }
+        public PlayerController Player { get; private set; }
+        public GameHUD Hud { get; set; }
+
+        public Vector2Int SurfaceDropCell { get; private set; }
+        public Vector2Int RecycleDropCell { get; private set; }
+        public RectInt BuildingRect { get; private set; }       // 처리장 (능력치 강화 포함)
+        public RectInt RecycleRect { get; private set; }        // 분리수거장 부지
+
+        public readonly List<MineSite> DiscoveredMines = new List<MineSite>();
+        public readonly List<Worker> Workers = new List<Worker>();
+
+        // ---------- 경제 / 일일 사이클 ----------
+        public int Money { get; private set; }
+        public int Day { get; private set; } = 1;
+        public int Quota { get; private set; }
+        public int DeliveredToday { get; private set; }
+        public float TimeLeft { get; private set; }             // 오늘 남은 시간
+        public GameState State { get; private set; } = GameState.Day;
+        public string ResultReason { get; private set; } = "";
+
+        /// <summary>어제 정산 요약 (밤 화면 표시용).</summary>
+        public string SettlementReport { get; private set; } = "";
+
+        // ---------- 시설 ----------
+        public bool HasRecycleStation { get; private set; }
+        public int RecycleLevel { get; private set; }           // 0 없음 / 1 / 2
+
+        public float SellMultiplier =>
+            RecycleLevel >= 2 ? GameConfig.RecycleBonus2 :
+            RecycleLevel >= 1 ? GameConfig.RecycleBonus1 : 1f;
+
+        public bool ShopOpen { get; private set; }              // 낮의 간이 강화 상점
+        public bool IsRunning => State == GameState.Day;
+        public float QuotaProgress01 => Quota <= 0 ? 0f : Mathf.Clamp01(DeliveredToday / (float)Quota);
+        public int Seed { get; private set; }
+
+        PetCompanion _petObj;
+        readonly List<string> _log = new List<string>();
+        readonly List<float> _logTime = new List<float>();
+        int _workerSeed;
+
+        // ==================================================================
+        public void StartGame(int seed, bool configureCamera = true)
+        {
+            Instance = this;
+            Seed = seed;
+            _workerSeed = seed * 31 + 7;
+
+            State = GameState.Day;
+            ShopOpen = false;
+            Money = GameConfig.StartingMoney;
+            Day = 1;
+            Quota = GameConfig.QuotaForDay(Day);
+            DeliveredToday = 0;
+            TimeLeft = GameConfig.DayLengthSeconds;
+            HasRecycleStation = false;
+            RecycleLevel = 0;
+            _log.Clear();
+            _logTime.Clear();
+
+            Grid = WorldGenerator.Generate(seed);
+
+            int cx = Grid.Width / 2;
+            SurfaceDropCell = new Vector2Int(cx, GameConfig.SurfaceRow - 1);
+
+            BuildingRect = new RectInt(
+                cx + GameConfig.BuildingOffsetX,
+                GameConfig.SurfaceRow - GameConfig.BuildingHeight,
+                GameConfig.BuildingWidth, GameConfig.BuildingHeight);
+
+            RecycleRect = new RectInt(
+                cx + GameConfig.RecycleOffsetX,
+                GameConfig.SurfaceRow - GameConfig.BuildingHeight,
+                GameConfig.BuildingWidth, GameConfig.BuildingHeight);
+            RecycleDropCell = new Vector2Int(
+                RecycleRect.xMin + RecycleRect.width / 2, GameConfig.SurfaceRow - 1);
+
+            var viewGo = new GameObject("WorldView");
+            viewGo.transform.SetParent(transform, false);
+            View = viewGo.AddComponent<WorldView>();
+            View.Build(Grid);
+            View.ShowBuilding(BuildingRect);
+            // 공용 투입구는 처음부터 존재하고, 구매 업그레이드는 판매 배율만 강화한다.
+            View.ShowRecycleStation(RecycleRect, RecycleLevel);
+
+            var playerGo = new GameObject("Player");
+            playerGo.transform.SetParent(transform, false);
+            Player = playerGo.AddComponent<PlayerController>();
+            Player.Init(this, SurfaceDropCell);
+
+            if (configureCamera)
+                SetupCamera(playerGo.transform);
+            View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
+
+            Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 시작 지점 바로 아래 쓰레기부터 수거하자!");
+            Log("쓰레기는 지상 왼쪽 분리수거장 앞에서 E를 눌러 버린다");
+            Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this)
+                Instance = null;
+        }
+
+        // ---------- 시야 (장비/펫 보너스 포함) ----------
+        public int VisionRadius => GameConfig.VisionRadius + (Player != null ? Player.Gear.VisionBonus : 0);
+        public int VisionFadeRadius => GameConfig.VisionFadeRadius + (Player != null ? Player.Gear.VisionBonus : 0);
+
+        void SetupCamera(Transform target)
+        {
+            var cam = Camera.main;
+            if (cam == null)
+            {
+                var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
+                cam = camGo.AddComponent<Camera>();
+            }
+            cam.orthographic = true;
+            cam.orthographicSize = GameConfig.CameraSize;
+            cam.backgroundColor = new Color32(14, 12, 18, 255);
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.transform.position = target.position + new Vector3(0, 0, -10f);
+
+            var old = cam.GetComponent<CameraFollow>();
+            if (old != null) Destroy(old);
+
+            var oldSky = cam.GetComponent<SkyCycle>();
+            if (oldSky != null) Destroy(oldSky);
+
+            var follow = cam.gameObject.AddComponent<CameraFollow>();
+            follow.Setup(target, Grid);
+
+            var sky = cam.gameObject.AddComponent<SkyCycle>();
+            sky.Setup(cam, this);
+        }
+
+        // ==================================================================
+        /// <summary>StartGame 이 정상적으로 끝났는가.</summary>
+        public bool Initialized => Grid != null && Player != null && View != null;
+
+        void Update()
+        {
+            // 초기화되지 않은 인스턴스는 아무 것도 하지 않는다.
+            // (StartGame 이 실패했거나 씬에 수동 배치된 경우 EndDay 가 폭주하는 것을 막는다)
+            if (!Initialized) return;
+
+            var kb = Keyboard.current;
+
+            switch (State)
+            {
+                case GameState.Won:
+                case GameState.Lost:
+                    if (kb != null && kb.rKey.wasPressedThisFrame) Bootstrap.Restart();
+                    return;
+
+                case GameState.Night:
+                    // 밤에는 시간이 멈춘다. HUD 의 '다음 날' 버튼이 StartNextDay 를 부른다.
+                    if (kb != null)
+                    {
+                        if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame)
+                            StartNextDay();
+                        else if (kb.rKey.wasPressedThisFrame && kb.leftShiftKey.isPressed)
+                            Bootstrap.Restart();
+                    }
+                    return;
+
+                case GameState.Day:
+                    TickDay(kb);
+                    return;
+            }
+        }
+
+        void TickDay(Keyboard kb)
+        {
+            TimeLeft -= Time.deltaTime;
+            if (TimeLeft <= 0f)
+            {
+                TimeLeft = 0f;
+                EndDay();
+                return;
+            }
+
+            if (kb != null)
+            {
+                if (kb.rKey.wasPressedThisFrame && kb.leftShiftKey.isPressed)
+                {
+                    Bootstrap.Restart();
+                    return;
+                }
+
+                if (kb.eKey.wasPressedThisFrame) HandleInteract();
+                if (kb.escapeKey.wasPressedThisFrame && ShopOpen) ShopOpen = false;
+
+                if (!ShopOpen)
+                {
+                    if (kb.hKey.wasPressedThisFrame) TryHire(WorkerKind.Miner);
+                    if (kb.jKey.wasPressedThisFrame) TryHire(WorkerKind.Hauler);
+                }
+            }
+
+            UpdateHighlight();
+            RefreshMineVisuals();
+            TrimLog();
+        }
+
+        // ==================================================================
+        // 하루 정산
+        // ==================================================================
+        bool _endingDay;
+
+        void EndDay()
+        {
+            if (_endingDay) return;         // 재진입 방지
+            _endingDay = true;
+
+            // 어떤 예외가 나더라도 반드시 상태가 넘어가게 한다.
+            // (안 그러면 TimeLeft 가 0 인 채로 매 프레임 EndDay 가 다시 불린다)
+            try
+            {
+                DoEndDay();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e);
+                SettlementReport = "정산 중 오류가 발생했다";
+                State = GameState.Night;
+            }
+            finally
+            {
+                _endingDay = false;
+            }
+        }
+
+        void DoEndDay()
+        {
+            ShopOpen = false;
+            var lines = new List<string>();
+            var gear = Player != null ? Player.Gear : null;
+
+            // 0) 운반 일꾼이 싣고 있던 화물은 광산 야적장으로 반환 (다음 날 이월 방지)
+            foreach (var w in Workers)
+                if (w != null) w.DumpCargoToMine();
+
+            // 1) 마감 시 지하에 있었으면 가방 몰수
+            if (Player != null && !Player.AtSurface && Player.Inventory.Count > 0)
+            {
+                int lost = Player.InventoryValue;
+                Player.TakeAll();
+                lines.Add($"마감 때 지하에 있어서 가방을 몰수당했다 (-{lost:N0}원어치)");
+            }
+
+            // 2) 할당량 판정
+            if (Quota > 0 && DeliveredToday < Quota)
+            {
+                GameOver($"{Day}일차 할당량 미달 ({DeliveredToday:N0} / {Quota:N0}원)");
+                return;
+            }
+            lines.Add($"할당량 달성! {DeliveredToday:N0} / {Quota:N0}원");
+
+            // 3) 일꾼 일당 — 못 주면 일꾼이 떠난다
+            int wages = 0;
+            foreach (var w in Workers)
+                wages += w.Kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
+
+            if (wages > 0)
+            {
+                if (Money >= wages)
+                {
+                    Money -= wages;
+                    lines.Add($"일꾼 일당 지급 -{wages:N0}원 ({Workers.Count}명)");
+                }
+                else
+                {
+                    int quit = FireUnpaidWorkers(ref wages);
+                    Money = Mathf.Max(0, Money - wages);
+                    lines.Add($"일당이 모자라 일꾼 {quit}명이 떠났다");
+                }
+            }
+
+            // 4) 펫 먹이
+            if (gear != null && gear.Pet != PetKind.None)
+            {
+                if (Money >= GameConfig.PetFeedCost)
+                {
+                    Money -= GameConfig.PetFeedCost;
+                    lines.Add($"{PlayerGear.PetName(gear.Pet)} 먹이값 -{GameConfig.PetFeedCost}원");
+                }
+                else
+                {
+                    lines.Add($"먹이값이 없어 {PlayerGear.PetName(gear.Pet)}가 떠났다...");
+                    SetPet(PetKind.None);
+                }
+            }
+
+            // 플레이어를 지상으로
+            if (Player != null) Player.ReturnToSurface(SurfaceDropCell);
+            SettlementReport = string.Join("\n", lines);
+
+            // 5) 승리 판정
+            if (Day >= GameConfig.DaysToWin)
+            {
+                State = GameState.Won;
+                ResultReason = $"{GameConfig.DaysToWin}일을 버텼다! 매립지의 전설이 되었다";
+                return;
+            }
+
+            State = GameState.Night;
+        }
+
+        int FireUnpaidWorkers(ref int wages)
+        {
+            int quit = 0;
+            while (wages > Money && Workers.Count > 0)
+            {
+                var w = Workers[Workers.Count - 1];
+                Workers.RemoveAt(Workers.Count - 1);
+                w.DumpCargoToMine();   // 화물은 광산에 두고 떠난다
+                wages -= w.Kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
+                if (w.Kind == WorkerKind.Miner) w.Mine.Miners--;
+                else w.Mine.Haulers--;
+                Destroy(w.gameObject);
+                quit++;
+            }
+            return quit;
+        }
+
+        /// <summary>밤 화면의 '다음 날 시작' 버튼.</summary>
+        public void StartNextDay()
+        {
+            if (State != GameState.Night) return;
+
+            Day++;
+            Quota = GameConfig.QuotaForDay(Day);
+            DeliveredToday = 0;
+            TimeLeft = GameConfig.DayLengthSeconds;
+            if (Player != null) Player.Gear.OnNewDay();
+            State = GameState.Day;
+
+            Log($"{Day}일차 — 오늘 할당량 {Quota:N0}원");
+        }
+
+        // ==================================================================
+        void UpdateHighlight()
+        {
+            if (Player == null || View == null) return;
+
+            if (!Player.HoverValid || ShopOpen)
+            {
+                View.SetHighlight(false, default, false);
+                return;
+            }
+
+            var c = Player.HoverCell;
+            var kind = Grid.Get(c.x, c.y);
+            bool canDig = TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= Player.Stats.Power;
+            // 이미 판 통로나 힘이 부족한 칸에는 빨간 사각형을 남기지 않는다.
+            View.SetHighlight(canDig, c, true);
+        }
+
+        public void NotifyPlayerMoved()
+        {
+            if (View != null && Player != null)
+                View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
+        }
+
+        public bool PointerOverUI(Vector2 screenPos)
+        {
+            return Hud != null && Hud.BlocksPointer(screenPos);
+        }
+
+        // ==================================================================
+        public bool PlayerNearBuilding() => PlayerNearRect(BuildingRect);
+        public bool PlayerNearRecycle() => PlayerNearRect(RecycleRect);
+
+        bool PlayerNearRect(RectInt rect)
+        {
+            if (Player == null) return false;
+            var c = Player.Cell;
+
+            int dx = 0;
+            if (c.x < rect.xMin) dx = rect.xMin - c.x;
+            else if (c.x >= rect.xMax) dx = c.x - (rect.xMax - 1);
+
+            int dy = 0;
+            if (c.y < rect.yMin) dy = rect.yMin - c.y;
+            else if (c.y >= rect.yMax) dy = c.y - (rect.yMax - 1);
+
+            return Mathf.Max(dx, dy) <= GameConfig.BuildingInteractRange;
+        }
+
+        void HandleInteract()
+        {
+            if (PlayerNearRecycle())
+            {
+                if (Player.Inventory.Count == 0)
+                {
+                    Log("분리수거장에 버릴 쓰레기가 없다");
+                    return;
+                }
+
+                DeliverToSurface(Player.TakeAll(), "분리수거장 투입");
+                return;
+            }
+
+            ToggleShop();
+        }
+
+        void ToggleShop()
+        {
+            if (ShopOpen) { ShopOpen = false; return; }
+            if (!PlayerNearBuilding())
+            {
+                Log("처리장 건물 앞으로 가서 E 를 눌러야 한다");
+                return;
+            }
+            ShopOpen = true;
+        }
+
+        public void CloseShop() => ShopOpen = false;
+
+        // ==================================================================
+        public void DiscoverMine(MineSite site)
+        {
+            if (site.Discovered) return;
+            site.Discovered = true;
+
+            foreach (var c in site.Cells)
+            {
+                if (TileInfo.IsDiggable(Grid.Get(c.x, c.y)))
+                    Grid.Set(c.x, c.y, TileKind.Empty);
+            }
+
+            DiscoveredMines.Add(site);
+            View.ShowMine(site);
+            Log($"지하 분리수거 구역 발견! {site.Label} · 수거 가능량 {site.Reserve}");
+        }
+
+        void RefreshMineVisuals()
+        {
+            for (int i = 0; i < DiscoveredMines.Count; i++)
+                View.RefreshMine(DiscoveredMines[i]);
+        }
+
+        /// <summary>쓰레기를 지상에 반입 — 판매되고 오늘 할당량에 반영된다.</summary>
+        public void DeliverToSurface(List<LootItem> items, string source)
+        {
+            if (items == null || items.Count == 0) return;
+
+            int value = 0;
+            for (int i = 0; i < items.Count; i++) value += items[i].Value;
+
+            int paid = Mathf.RoundToInt(value * SellMultiplier);
+            Money += paid;
+            DeliveredToday += paid;
+
+            string bonus = SellMultiplier > 1f ? $" (분리수거 x{SellMultiplier:0.0})" : "";
+            Log($"{source}: {items.Count}개 판매 → +{paid:N0}원{bonus}");
+        }
+
+        // ==================================================================
+        // 구매 (낮 간이 상점 + 밤 상점 공용)
+        // ==================================================================
+        public bool TryUpgrade(StatKind kind)
+        {
+            var stats = Player.Stats;
+            if (stats.IsMaxed(kind)) { Log($"{PlayerStats.DisplayName(kind)}은(는) 이미 최대 단계다"); return false; }
+
+            int cost = stats.CostOf(kind);
+            if (!TrySpend(cost, $"{PlayerStats.DisplayName(kind)} 강화")) return false;
+
+            stats.Increase(kind);
+            Log($"{PlayerStats.DisplayName(kind)} 강화! → {stats.ValueText(kind)} (-{cost:N0}원)");
+            return true;
+        }
+
+        public bool TryBuyHeadlamp()
+        {
+            var g = Player.Gear;
+            if (g.HeadlampLevel >= 2) { Log("헤드랜턴은 최대 단계다"); return false; }
+            int cost = g.HeadlampLevel == 0 ? GameConfig.HeadlampCost1 : GameConfig.HeadlampCost2;
+            if (!TrySpend(cost, "헤드랜턴")) return false;
+            g.HeadlampLevel++;
+            NotifyPlayerMoved();
+            Log($"헤드랜턴 Lv.{g.HeadlampLevel} — 시야 +{g.HeadlampLevel}");
+            return true;
+        }
+
+        public bool TryBuyDetector()
+        {
+            if (Player.Gear.HasDetector) { Log("이미 탐지기가 있다"); return false; }
+            if (!TrySpend(GameConfig.DetectorCost, "쓰레기 탐지기")) return false;
+            Player.Gear.HasDetector = true;
+            Log("쓰레기 탐지기 구입 — 지하에서 Q 로 사용");
+            return true;
+        }
+
+        public bool TryBuyHazmat()
+        {
+            if (Player.Gear.HasHazmat) { Log("이미 방호복이 있다"); return false; }
+            if (!TrySpend(GameConfig.HazmatCost, "방호복")) return false;
+            Player.Gear.HasHazmat = true;
+            Log("방호복 구입 — 유해 폐기물을 안전하게 주울 수 있다");
+            return true;
+        }
+
+        public bool TryBuyCompressor()
+        {
+            if (Player.Gear.HasCompressor) { Log("이미 압축기가 있다"); return false; }
+            if (!TrySpend(GameConfig.CompressorCost, "휴대용 압축기")) return false;
+            Player.Gear.HasCompressor = true;
+            Log("휴대용 압축기 구입 — 이제 줍는 쓰레기의 부피가 30% 줄어든다");
+            return true;
+        }
+
+        public bool TryBuyReturnBell()
+        {
+            if (Player.Gear.HasReturnBell) { Log("이미 귀환 벨이 있다"); return false; }
+            if (!TrySpend(GameConfig.ReturnBellCost, "귀환 벨")) return false;
+            Player.Gear.HasReturnBell = true;
+            Log("귀환 벨 구입 — 지하에서 B 로 하루 1회 귀환");
+            return true;
+        }
+
+        public bool TryBuyEnergyDrink()
+        {
+            if (Player.Gear.EnergyDrinks >= GameConfig.EnergyDrinkMax)
+            { Log($"에너지 드링크는 {GameConfig.EnergyDrinkMax}개까지만 들 수 있다"); return false; }
+            if (!TrySpend(GameConfig.EnergyDrinkCost, "에너지 드링크")) return false;
+            Player.Gear.EnergyDrinks++;
+            Log($"에너지 드링크 구입 (보유 {Player.Gear.EnergyDrinks}개) — 지하에서 F");
+            return true;
+        }
+
+        public bool TryBuyPet(PetKind kind)
+        {
+            if (Player.Gear.Pet == kind) { Log("이미 데리고 있는 펫이다"); return false; }
+            int cost = PlayerGear.PetCost(kind);
+            if (!TrySpend(cost, PlayerGear.PetName(kind) + " 입양")) return false;
+            SetPet(kind);
+            Log($"{PlayerGear.PetName(kind)} 입양! {PlayerGear.PetDesc(kind)} (먹이값 하루 {GameConfig.PetFeedCost}원)");
+            return true;
+        }
+
+        void SetPet(PetKind kind)
+        {
+            if (_petObj != null) { Destroy(_petObj.gameObject); _petObj = null; }
+            Player.Gear.Pet = kind;
+            NotifyPlayerMoved();
+
+            if (kind == PetKind.None) return;
+            var go = new GameObject("Pet_" + kind);
+            go.transform.SetParent(transform, false);
+            _petObj = go.AddComponent<PetCompanion>();
+            _petObj.Init(this, kind);
+        }
+
+        public bool TryBuyRecycleStation()
+        {
+            if (RecycleLevel >= 2) { Log("분리수거장은 최대 단계다"); return false; }
+
+            if (RecycleLevel == 0)
+            {
+                if (!TrySpend(GameConfig.RecycleStationCost, "분리수거 설비 가동")) return false;
+                RecycleLevel = 1;
+                HasRecycleStation = true;
+                View.ShowRecycleStation(RecycleRect, RecycleLevel);
+                Log($"분리수거 설비 가동! 판매가 x{GameConfig.RecycleBonus1:0.0}");
+            }
+            else
+            {
+                if (!TrySpend(GameConfig.RecycleUpgradeCost, "분리수거장 확장")) return false;
+                RecycleLevel = 2;
+                View.ShowRecycleStation(RecycleRect, RecycleLevel);
+                Log($"분리수거장 확장! 판매가 x{GameConfig.RecycleBonus2:0.0}");
+            }
+            return true;
+        }
+
+        bool TrySpend(int cost, string what)
+        {
+            if (Money < cost)
+            {
+                Log($"돈이 부족하다 ({what} {cost:N0}원 / 보유 {Money:N0}원)");
+                return false;
+            }
+            Money -= cost;
+            return true;
+        }
+
+        public void TryHire(WorkerKind kind)
+        {
+            var mine = Player.MineHere();
+            if (mine == null)
+            {
+                Log("일꾼은 발견한 지하 분리수거 구역 안에서 고용할 수 있다");
+                return;
+            }
+            int cost = kind == WorkerKind.Miner ? GameConfig.MinerHireCost : GameConfig.HaulerHireCost;
+            int wage = kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
+            if (!TrySpend(cost, "일꾼 고용")) return;
+
+            var go = new GameObject(kind == WorkerKind.Miner ? "Miner" : "Hauler");
+            go.transform.SetParent(transform, false);
+            var w = go.AddComponent<Worker>();
+            w.Init(this, kind, mine, _workerSeed++);
+            Workers.Add(w);
+
+            if (kind == WorkerKind.Miner) mine.Miners++;
+            else mine.Haulers++;
+
+            Log($"{(kind == WorkerKind.Miner ? "수거" : "운반")} 일꾼 고용 → 지하 수거장 #{mine.Id} (-{cost:N0}원, 일당 {wage}원)");
+        }
+
+        // ==================================================================
+        public void GameOver(string reason)
+        {
+            // 낮에만 죽을 수 있다. (밤/결과 화면 중의 호출은 무시)
+            if (State != GameState.Day) return;
+            State = GameState.Lost;
+            ShopOpen = false;
+            ResultReason = reason;
+            Log($"게임 오버: {reason}");
+        }
+
+        // ==================================================================
+        public void Log(string msg)
+        {
+            _log.Add(msg);
+            _logTime.Add(Time.time);
+            if (_log.Count > 40) { _log.RemoveAt(0); _logTime.RemoveAt(0); }
+        }
+
+        void TrimLog()
+        {
+            while (_log.Count > 0 && Time.time - _logTime[0] > 12f)
+            {
+                _log.RemoveAt(0);
+                _logTime.RemoveAt(0);
+            }
+        }
+
+        public List<string> RecentLog(int count)
+        {
+            var result = new List<string>();
+            int start = Mathf.Max(0, _log.Count - count);
+            for (int i = start; i < _log.Count; i++) result.Add(_log[i]);
+            return result;
+        }
+    }
+
+    /// <summary>플레이어를 항상 따라다니는 카메라.</summary>
+    public class CameraFollow : MonoBehaviour
+    {
+        Transform _target;
+        WorldGrid _grid;
+        Camera _cam;
+
+        public void Setup(Transform target, WorldGrid grid)
+        {
+            _target = target;
+            _grid = grid;
+            _cam = GetComponent<Camera>();
+
+            if (_target != null)
+                transform.position = new Vector3(_target.position.x, _target.position.y, -10f);
+        }
+
+        void LateUpdate()
+        {
+            if (_target == null || _cam == null) return;
+
+            float halfH = _cam.orthographicSize;
+            float halfW = halfH * _cam.aspect;
+
+            Vector3 p = _target.position;
+
+            float worldWidth = _grid.Width * GameConfig.CellSize;
+            float worldHeight = _grid.Height * GameConfig.CellSize;
+            float minX = halfW, maxX = worldWidth - halfW;
+            float x = maxX > minX ? Mathf.Clamp(p.x, minX, maxX) : worldWidth * 0.5f;
+
+            float minY = -worldHeight + halfH;
+            float y = Mathf.Max(p.y, minY);
+
+            Vector3 want = new Vector3(x, y, -10f);
+
+            if ((transform.position - want).sqrMagnitude >
+                GameConfig.CameraSnapDistance * GameConfig.CameraSnapDistance)
+            {
+                transform.position = want;
+                return;
+            }
+
+            transform.position = Vector3.Lerp(
+                transform.position, want, 1f - Mathf.Exp(-GameConfig.CameraLerp * Time.deltaTime));
+        }
+    }
+}
