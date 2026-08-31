@@ -24,6 +24,9 @@ namespace DigGame
 
         public int Miners;
         public int Haulers;
+        public int AutoIncomeToday { get; private set; }
+        public int AutoItemsToday { get; private set; }
+        public int LifetimeAutoIncome { get; private set; }
 
         public MineSite(int id, RectInt rect, Zone zone, int oreTier, int reserve)
         {
@@ -58,7 +61,17 @@ namespace DigGame
         public bool IsDepleted => Reserve <= 0 && Stockpile.Count == 0;
         public bool StockpileFull => Stockpile.Count >= GameConfig.MineStockpileCap;
 
-        public string Label => $"#{Id} {ZoneInfo.DisplayName(Zone)} · {LootTable.OreName(OreTier)} 분리수거장 ({Rect.width}x{Rect.height})";
+        public int StockpileRawValue
+        {
+            get
+            {
+                int total = 0;
+                for (int i = 0; i < Stockpile.Count; i++) total += Stockpile[i].Value;
+                return total;
+            }
+        }
+
+        public string Label => $"#{Id} {ZoneInfo.DisplayName(Zone)} · {LootTable.OreName(OreTier)} 도시광산 ({Rect.width}x{Rect.height})";
 
         public bool ExtractOne(System.Random rng)
         {
@@ -68,12 +81,52 @@ namespace DigGame
             return true;
         }
 
+        public void RecordAutomaticSale(int itemCount, int paid)
+        {
+            AutoItemsToday += Mathf.Max(0, itemCount);
+            AutoIncomeToday += Mathf.Max(0, paid);
+            LifetimeAutoIncome += Mathf.Max(0, paid);
+        }
+
+        public void ResetDailyIncome()
+        {
+            AutoItemsToday = 0;
+            AutoIncomeToday = 0;
+        }
+
         public List<LootItem> TakeFromStockpile(int count)
         {
             int n = Mathf.Min(count, Stockpile.Count);
             var taken = Stockpile.GetRange(0, n);
             Stockpile.RemoveRange(0, n);
             return taken;
+        }
+
+        /// <summary>플레이어 가방을 빈 보관 슬롯만큼 옮긴다.</summary>
+        public int StoreFrom(List<LootItem> items)
+        {
+            if (items == null || items.Count == 0) return 0;
+            int count = Mathf.Min(items.Count, Mathf.Max(0, GameConfig.MineStockpileCap - Stockpile.Count));
+            if (count <= 0) return 0;
+
+            Stockpile.AddRange(items.GetRange(0, count));
+            items.RemoveRange(0, count);
+            return count;
+        }
+
+        /// <summary>남은 가방 부피에 들어가는 보관품 하나를 꺼낸다.</summary>
+        public bool TryTakeFitting(int maxVolume, out LootItem item)
+        {
+            for (int i = 0; i < Stockpile.Count; i++)
+            {
+                if (Stockpile[i].Volume > maxVolume) continue;
+                item = Stockpile[i];
+                Stockpile.RemoveAt(i);
+                return true;
+            }
+
+            item = default;
+            return false;
         }
     }
 }

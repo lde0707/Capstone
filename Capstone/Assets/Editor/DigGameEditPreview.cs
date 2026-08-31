@@ -79,6 +79,11 @@ namespace DigGame.Editor
                 $"4층 {SingleSlotRate(Zone.Abyss):P0}");
             ValidateLootDistribution();
             ValidateBalance();
+            ValidatePowerDigScaling();
+            ValidateMineUtility();
+            ValidateSurfaceEntrance();
+            ValidateDayTiming();
+            ValidateWorkerEconomy();
         }
 
         static void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -277,30 +282,86 @@ namespace DigGame.Editor
                     throw new System.InvalidOperationException($"환경 픽셀 에셋 Point 필터가 빠졌습니다: {names[i]}");
             }
 
+            string[] pixelRefreshTextures =
+            {
+                "Ground/tileset1", "Ground/tileset2", "Ground/tileset4",
+                "Ground/tileset5", "Ground/tileset6", "Factory/recycler_factory",
+                "Products/recycled_products", "Player/hero_down", "Player/hero_up",
+                "Player/hero_side", "Player/hero_dig_down", "Player/hero_dig_up",
+                "Player/hero_dig_side"
+            };
+            for (int i = 0; i < pixelRefreshTextures.Length; i++)
+            {
+                var texture = Resources.Load<Texture2D>("PixelRefresh/" + pixelRefreshTextures[i]);
+                if (texture == null)
+                    throw new System.InvalidOperationException($"새 CC0 픽셀 에셋을 임포트하지 못했습니다: {pixelRefreshTextures[i]}");
+                if (texture.filterMode != FilterMode.Point)
+                    throw new System.InvalidOperationException($"새 CC0 픽셀 에셋 Point 필터가 빠졌습니다: {pixelRefreshTextures[i]}");
+            }
+
             var groundSprites = new HashSet<Sprite>();
             var passageSprites = new HashSet<Sprite>();
             for (int i = 0; i < 16; i++)
             {
-                Sprite ground = EnvironmentSpriteCatalog.GroundFill(i);
-                Sprite passage = EnvironmentSpriteCatalog.PassageForMask(i, 5);
-                if (ground == null || ground.rect.width != 32f || ground.rect.height != 32f)
-                    throw new System.InvalidOperationException($"OPP 연속 암반 {i}번 크롭이 올바르지 않습니다.");
-                if (passage == null || passage.rect.width != 32f || passage.rect.height != 32f)
-                    throw new System.InvalidOperationException($"OPP 통로 마스크 {i}번 크롭이 올바르지 않습니다.");
+                Sprite ground = EnvironmentSpriteCatalog.GroundFill(TileKind.SoftDirt, i);
+                Sprite passage = EnvironmentSpriteCatalog.PassageForMask(TileKind.SoftDirt, i, 5);
+                if (ground == null || ground.rect.width != 16f || ground.rect.height != 16f)
+                    throw new System.InvalidOperationException($"CC0 연속 흙 {i}번 크롭이 올바르지 않습니다.");
+                if (passage == null || passage.rect.width != 16f || passage.rect.height != 16f)
+                    throw new System.InvalidOperationException($"CC0 통로 마스크 {i}번 크롭이 올바르지 않습니다.");
                 groundSprites.Add(ground);
                 passageSprites.Add(passage);
             }
             if (groundSprites.Count != 16 || passageSprites.Count != 16)
                 throw new System.InvalidOperationException("연속 암반 또는 16방향 통로 타일이 모두 생성되지 않았습니다.");
 
-            if (EnvironmentSpriteCatalog.PassageForMask(15, 0) == null ||
+            if (EnvironmentSpriteCatalog.PassageForMask(255, 0) == null ||
                 EnvironmentSpriteCatalog.PassageForMask(5, 0) == null ||
                 EnvironmentSpriteCatalog.PassageForMask(1, 0) == null)
                 throw new System.InvalidOperationException("자연 연결·직선 통로·막힌 끝 대표 타일을 만들지 못했습니다.");
 
-            if (EnvironmentSpriteCatalog.SurfaceBin() == null ||
-                EnvironmentSpriteCatalog.RecycleItem(3) == null)
+            // 사용자 스케치 기준: 첫 굴착은 위만 열리고 좌우·바닥에 같은 흙이 남는다.
+            // 한 칸 더 아래를 파면 기존 칸과 새 칸 사이의 바닥이 사라져 세로 통로가 된다.
+            Sprite firstDig = EnvironmentSpriteCatalog.PassageForMask(1, 0);
+            Sprite verticalPassage = EnvironmentSpriteCatalog.PassageForMask(5, 0);
+            Sprite fullyOpen = EnvironmentSpriteCatalog.PassageForMask(255, 0);
+            if (SpritePixel(firstDig, 8, 15).a != 0 ||
+                SpritePixel(firstDig, 8, 0).a == 0 ||
+                SpritePixel(firstDig, 0, 8).a == 0 ||
+                SpritePixel(firstDig, 15, 8).a == 0)
+                throw new System.InvalidOperationException("첫 굴착 타일이 위가 열린 U자형 흙 가장자리가 아닙니다.");
+            if (SpritePixel(verticalPassage, 8, 15).a != 0 ||
+                SpritePixel(verticalPassage, 8, 0).a != 0)
+                throw new System.InvalidOperationException("두 번째 굴착 뒤 세로 통로의 중간 바닥이 제거되지 않았습니다.");
+            if (SpritePixel(fullyOpen, 0, 0).a != 0 || SpritePixel(fullyOpen, 15, 15).a != 0)
+                throw new System.InvalidOperationException("사방이 열린 통로에 잘린 흙 조각이 남아 있습니다.");
+
+            Color32 originalGroundPixel = SpritePixel(EnvironmentSpriteCatalog.GroundFill(0), 0, 0);
+            Color32 passageGroundPixel = SpritePixel(firstDig, 0, 0);
+            if (originalGroundPixel.r != passageGroundPixel.r ||
+                originalGroundPixel.g != passageGroundPixel.g ||
+                originalGroundPixel.b != passageGroundPixel.b ||
+                passageGroundPixel.a == 0)
+                throw new System.InvalidOperationException("캐기 전과 캐고 난 뒤의 흙 픽셀이 같은 재질이 아닙니다.");
+
+            var originalKindGrid = new WorldGrid(1, 1);
+            originalKindGrid.SetRaw(0, 0, TileKind.Clay);
+            originalKindGrid.Set(0, 0, TileKind.Empty);
+            if (originalKindGrid.OriginalGroundAt(0, 0) != TileKind.Clay)
+                throw new System.InvalidOperationException("굴착 전 지층 종류가 보존되지 않았습니다.");
+
+            if (EnvironmentSpriteCatalog.RecyclerFactory() == null ||
+                EnvironmentSpriteCatalog.RecycledProduct(MaterialKind.General) == null ||
+                EnvironmentSpriteCatalog.RecycledProduct(MaterialKind.Relic) == null)
                 throw new System.InvalidOperationException("분리수거장 픽셀 이미지를 만들지 못했습니다.");
+
+            foreach (Facing facing in System.Enum.GetValues(typeof(Facing)))
+            {
+                if (PlayerSpriteCatalog.Frames(PlayerVisualState.Walk, facing).Length != 4 ||
+                    PlayerSpriteCatalog.Frames(PlayerVisualState.Dig, facing).Length != 4)
+                    throw new System.InvalidOperationException(
+                        $"플레이어 {facing} 방향 걷기·굴착 애니메이션 프레임이 올바르지 않습니다.");
+            }
 
             Vector2Int sample = new Vector2Int(7, 9);
             Vector3 world = WorldGrid.CellToWorld(sample.x, sample.y);
@@ -312,15 +373,29 @@ namespace DigGame.Editor
 
             var station = preview.Find("WorldView/Markers/SurfaceTrashDropOff/SurfaceBin");
             var highlight = preview.Find("WorldView/DigHighlight");
+            var featureHints = preview.Find("WorldView/Tilemap Grid/Dig Feature Hints");
             if (station == null || station.GetComponent<SpriteRenderer>()?.sprite == null)
                 throw new System.InvalidOperationException("지상 분리수거장 에셋이 미리보기에 생성되지 않았습니다.");
             if (highlight == null || !Mathf.Approximately(highlight.localScale.x, GameConfig.CellSize))
                 throw new System.InvalidOperationException("굴착 조준 표시가 확대된 셀 크기와 맞지 않습니다.");
+            if (featureHints == null || featureHints.GetComponent<UnityEngine.Tilemaps.Tilemap>() == null)
+                throw new System.InvalidOperationException("특수 지층 힌트 타일맵이 생성되지 않았습니다.");
             var game = preview.GetComponent<GameManager>();
             if (game == null || game.Player == null || game.Player.IsFalling)
                 throw new System.InvalidOperationException("플레이어 무중력 이동 상태가 적용되지 않았습니다.");
 
-            Debug.Log($"[DigGame] OPP 연속 암반 16종 · 통로 마스크 16종 · 환경 에셋 {names.Length}개 · 무중력 검증 완료");
+            Debug.Log($"[DigGame] 동일 재질 U자 굴·8방향 연결 통로 · CC0 흙 변형 16종 · " +
+                $"통로 마스크 256종 · 환경 에셋 {names.Length}개 · 무중력 검증 완료");
+        }
+
+        static Color32 SpritePixel(Sprite sprite, int x, int y)
+        {
+            if (sprite == null || sprite.texture == null || !sprite.texture.isReadable)
+                throw new System.InvalidOperationException("검증할 환경 스프라이트 텍스처를 읽을 수 없습니다.");
+
+            int textureX = Mathf.RoundToInt(sprite.rect.x) + x;
+            int textureY = Mathf.RoundToInt(sprite.rect.y) + y;
+            return sprite.texture.GetPixel(textureX, textureY);
         }
 
         static void ValidateBalance()
@@ -329,31 +404,39 @@ namespace DigGame.Editor
             int minStarterValue = int.MaxValue;
             int maxStarterValue = 0;
             int starterValueSum = 0;
+            int minStarterRecycled = int.MaxValue;
+            int starterRecycledSum = 0;
 
             for (int seed = 1; seed <= seedCount; seed++)
             {
                 var grid = WorldGenerator.Generate(seed * 7919);
-                int center = grid.Width / 2;
-                int startX = center - GameConfig.StarterTrashCount / 2;
+                int entranceX = WorldGenerator.SurfaceEntranceX(grid);
+                int startX = entranceX - GameConfig.StarterTrashCount / 2;
                 int starterCount = 0;
                 int starterValue = 0;
+                int starterRecycled = 0;
 
                 for (int i = 0; i < GameConfig.StarterTrashCount; i++)
                 {
                     int x = Mathf.Clamp(startX + i, 1, grid.Width - 2);
-                    if (!grid.TryPeekTreasure(x, GameConfig.SurfaceRow, out var item)) continue;
+                    if (!grid.TryPeekTreasure(x, GameConfig.StarterTrashRow, out var item)) continue;
                     starterCount++;
                     starterValue += item.Value;
+                    starterRecycled += Mathf.RoundToInt(
+                        item.Value * RecyclingInfo.ValueMultiplier(item.Material));
                 }
 
                 if (starterCount != GameConfig.StarterTrashCount)
                     throw new System.InvalidOperationException($"시작 쓰레기가 {starterCount}개만 배치되었습니다.");
-                if (starterValue < GameConfig.QuotaForDay(1))
-                    throw new System.InvalidOperationException($"시작 쓰레기 가치 {starterValue}원이 첫날 할당량보다 낮습니다.");
+                if (starterRecycled < GameConfig.QuotaForDay(1) * 0.70f)
+                    throw new System.InvalidOperationException(
+                        $"시작 쓰레기 재활용가 {starterRecycled}원이 첫날 할당량의 70%보다 낮습니다.");
 
                 minStarterValue = Mathf.Min(minStarterValue, starterValue);
                 maxStarterValue = Mathf.Max(maxStarterValue, starterValue);
                 starterValueSum += starterValue;
+                minStarterRecycled = Mathf.Min(minStarterRecycled, starterRecycled);
+                starterRecycledSum += starterRecycled;
             }
 
             Debug.Log($"[DigGame] 일차별 할당량 — " +
@@ -362,7 +445,8 @@ namespace DigGame.Editor
                 $"{GameConfig.QuotaForDay(5):N0} → {GameConfig.QuotaForDay(6):N0} → " +
                 $"{GameConfig.QuotaForDay(7):N0}원");
             Debug.Log($"[DigGame] 시작 쓰레기 {GameConfig.StarterTrashCount}개 가치 — " +
-                $"최소 {minStarterValue:N0} / 평균 {starterValueSum / seedCount:N0} / 최대 {maxStarterValue:N0}원");
+                $"원물 최소 {minStarterValue:N0} / 평균 {starterValueSum / seedCount:N0} / 최대 {maxStarterValue:N0}원 · " +
+                $"재활용 최소 {minStarterRecycled:N0} / 평균 {starterRecycledSum / seedCount:N0}원");
         }
 
         static void ValidateLootDistribution()
@@ -372,6 +456,7 @@ namespace DigGame.Editor
             var count = new int[4];
             var singleSlot = new int[4];
             var valueSum = new long[4];
+            var featureCount = new int[4];
 
             foreach (var (cell, item) in grid.AllTreasures)
             {
@@ -386,10 +471,23 @@ namespace DigGame.Editor
                 if (item.Volume == 1) singleSlot[zone]++;
             }
 
+            foreach (var (cell, feature) in grid.AllDigFeatures)
+            {
+                if (!TileInfo.IsDiggable(grid.Get(cell.x, cell.y)))
+                    throw new System.InvalidOperationException($"특수 지층이 팔 수 없는 칸 ({cell.x}, {cell.y})에 놓였습니다.");
+                featureCount[(int)feature]++;
+                if ((feature == DigFeature.CompactCache || feature == DigFeature.GasPocket) &&
+                    !grid.HasTreasure(cell.x, cell.y))
+                    throw new System.InvalidOperationException($"보상형 특수 지층 ({cell.x}, {cell.y})에 쓰레기가 없습니다.");
+            }
+
             if (grid.Width != GameConfig.WorldWidth || grid.Width < 183)
                 throw new System.InvalidOperationException($"월드 폭이 충분히 확장되지 않았습니다: {grid.Width}칸");
             if (names.Count < 10)
                 throw new System.InvalidOperationException($"쓰레기 종류가 {names.Count}개뿐입니다.");
+            for (int feature = 1; feature <= 3; feature++)
+                if (featureCount[feature] < 20)
+                    throw new System.InvalidOperationException($"{(DigFeature)feature} 특수 지층이 {featureCount[feature]}개뿐입니다.");
 
             double previousAverage = 0d;
             for (int zone = 0; zone < 4; zone++)
@@ -407,6 +505,140 @@ namespace DigGame.Editor
                 $"층별 1칸 쓰레기 {singleSlot[0]} / {singleSlot[1]} / {singleSlot[2]} / {singleSlot[3]}개 · " +
                 $"평균 가치 {valueSum[0] / count[0]:N0} → {valueSum[1] / count[1]:N0} → " +
                 $"{valueSum[2] / count[2]:N0} → {valueSum[3] / count[3]:N0}원");
+            Debug.Log($"[DigGame] 특수 지층 — 푸석한 흙 {featureCount[(int)DigFeature.LooseSoil]} · " +
+                $"압축층 {featureCount[(int)DigFeature.CompactCache]} · 가스층 {featureCount[(int)DigFeature.GasPocket]}개");
+        }
+
+        static void ValidatePowerDigScaling()
+        {
+            TileKind[] kinds =
+            {
+                TileKind.SoftDirt, TileKind.Clay, TileKind.Stone, TileKind.HardRock
+            };
+
+            foreach (TileKind kind in kinds)
+            {
+                int required = TileInfo.RequiredPower(kind);
+                float equalPower = TileInfo.PowerDigDurationMultiplier(kind, required);
+                float oneAbove = TileInfo.PowerDigDurationMultiplier(kind, required + 1);
+                float twoAbove = TileInfo.PowerDigDurationMultiplier(kind, required + 2);
+
+                if (!Mathf.Approximately(equalPower, 1f) || oneAbove >= equalPower || twoAbove >= oneAbove)
+                    throw new System.InvalidOperationException(
+                        $"{TileInfo.DisplayName(kind)}의 힘 우위 굴착 가속이 단계적으로 적용되지 않습니다.");
+            }
+
+            float softDirtAtPowerFour = TileInfo.PowerDigDurationMultiplier(TileKind.SoftDirt, 4);
+            if (!Mathf.Approximately(softDirtAtPowerFour, 1f / 2.05f))
+                throw new System.InvalidOperationException("낮은 단계 땅의 힘 굴착 보너스가 설정값과 다릅니다.");
+
+            Debug.Log("[DigGame] 힘 굴착 가속 — 요구치 초과 1단계당 속도 +35% · 총 기력 소모 유지");
+        }
+
+        static void ValidateMineUtility()
+        {
+            var mine = new MineSite(999, new RectInt(2, 2, 2, 2), Zone.Surface, 1, 20);
+            var rng = new System.Random(20260831);
+            for (int i = 0; i < GameConfig.MineDiscoveryCacheCount; i++)
+                if (!mine.ExtractOne(rng))
+                    throw new System.InvalidOperationException("도시광산 발견 샘플을 생성하지 못했습니다.");
+
+            var bag = new List<LootItem>
+            {
+                new LootItem("큰 폐기물", 80, Color.gray, 3, MaterialKind.General),
+                new LootItem("작은 폐기물", 40, Color.gray, 1, MaterialKind.Plastic)
+            };
+            int stored = mine.StoreFrom(bag);
+            if (stored != 2 || bag.Count != 0 || mine.Stockpile.Count != GameConfig.MineDiscoveryCacheCount + 2)
+                throw new System.InvalidOperationException("도시광산 안전 보관 기능이 가방을 올바르게 옮기지 못했습니다.");
+
+            // 앞에 큰 물건이 있어도 남은 부피에 맞는 작은 물건을 찾아 회수해야 한다.
+            var fittingMine = new MineSite(1000, new RectInt(0, 0, 2, 2), Zone.Surface, 1, 0);
+            fittingMine.Stockpile.Add(new LootItem("큰 폐기물", 80, Color.gray, 3, MaterialKind.General));
+            fittingMine.Stockpile.Add(new LootItem("작은 폐기물", 40, Color.gray, 1, MaterialKind.Plastic));
+            if (!fittingMine.TryTakeFitting(1, out var fitting) || fitting.Volume != 1)
+                throw new System.InvalidOperationException("도시광산 보관품의 부피별 회수 기능이 작동하지 않습니다.");
+
+            int recycled = Mathf.RoundToInt(mine.StockpileRawValue * RecyclingInfo.ValueMultiplier(MaterialKind.Metal));
+            if (recycled <= mine.StockpileRawValue)
+                throw new System.InvalidOperationException("도시광산 운반품에 재활용 가치가 적용되지 않습니다.");
+
+            Debug.Log($"[DigGame] 도시광산 — 발견 샘플 {GameConfig.MineDiscoveryCacheCount}개 · " +
+                $"안전 보관 {GameConfig.MineStockpileCap}칸 · 자동 재활용 운반 검증 완료");
+        }
+
+        static void ValidateSurfaceEntrance()
+        {
+            var grid = WorldGenerator.Generate(20260831);
+            int entranceX = WorldGenerator.SurfaceEntranceX(grid);
+
+            if (TileInfo.IsDiggable(TileKind.Grass) || TileInfo.RequiredPower(TileKind.Grass) >= 0)
+                throw new System.InvalidOperationException("잔디 지반이 파괴 불가로 설정되지 않았습니다.");
+
+            for (int row = 0; row < GameConfig.GrassLayerRows; row++)
+            {
+                int y = GameConfig.SurfaceRow + row;
+                if (grid.Get(entranceX, y) != TileKind.Empty ||
+                    grid.OriginalGroundAt(entranceX, y) != TileKind.Grass)
+                    throw new System.InvalidOperationException($"지상 입구 통로 {row + 1}번째 칸이 열리지 않았습니다.");
+
+                if (grid.Get(entranceX - 1, y) != TileKind.Grass ||
+                    grid.Get(entranceX + 1, y) != TileKind.Grass)
+                    throw new System.InvalidOperationException("지상 입구 옆의 잔디 지반 두께가 유지되지 않았습니다.");
+            }
+
+            if (!TileInfo.IsDiggable(grid.Get(entranceX, GameConfig.StarterTrashRow)))
+                throw new System.InvalidOperationException("지상 입구 아래가 굴착 가능한 첫 흙으로 이어지지 않습니다.");
+
+            Sprite grass = EnvironmentSpriteCatalog.GroundFill(TileKind.Grass, 0);
+            Sprite grassPassage = EnvironmentSpriteCatalog.PassageForMask(TileKind.Grass, 5, 0);
+            if (grass == null || grassPassage == null || grass.rect.width != 16f || grassPassage.rect.width != 16f)
+                throw new System.InvalidOperationException("초록 잔디 지반 또는 입구 통로 픽셀을 생성하지 못했습니다.");
+
+            Debug.Log($"[DigGame] 지상 잔디 — 파괴 불가 {GameConfig.GrassLayerRows}칸 · " +
+                $"스폰 오른쪽 {GameConfig.SurfaceEntranceOffsetX}칸 세로 입구 검증 완료");
+        }
+
+        static void ValidateDayTiming()
+        {
+            if (!Mathf.Approximately(GameConfig.DayLengthSeconds, 120f))
+                throw new System.InvalidOperationException("하루 길이가 2분으로 설정되지 않았습니다.");
+            if (!Mathf.Approximately(GameConfig.DayEndWarnSeconds, 20f))
+                throw new System.InvalidOperationException("마감 경고가 마지막 20초로 설정되지 않았습니다.");
+            if (GameConfig.DayEndWarnSeconds >= GameConfig.DayLengthSeconds)
+                throw new System.InvalidOperationException("마감 경고 시간이 하루 길이보다 짧아야 합니다.");
+
+            Debug.Log("[DigGame] 하루 주기 — 낮 120초 · 마지막 20초 마감 경고 검증 완료");
+        }
+
+        static void ValidateWorkerEconomy()
+        {
+            int cycles = Mathf.FloorToInt(GameConfig.DayLengthSeconds / GameConfig.MinerExtractInterval);
+            int minGross = int.MaxValue;
+            int totalGross = 0;
+            const int samples = 32;
+
+            for (int seed = 0; seed < samples; seed++)
+            {
+                var rng = new System.Random(9109 + seed * 7919);
+                int gross = 0;
+                for (int cycle = 0; cycle < cycles; cycle++)
+                {
+                    LootItem item = LootTable.RollOre(1, rng); // 지상 근처 도시광산
+                    gross += Mathf.RoundToInt(item.Value * RecyclingInfo.ValueMultiplier(item.Material));
+                }
+                minGross = Mathf.Min(minGross, gross);
+                totalGross += gross;
+            }
+
+            int firstDayNet = minGross - GameConfig.MinerHireCost - GameConfig.MinerWage;
+            if (cycles < 5 || minGross < 2000 || firstDayNet < 1000)
+                throw new System.InvalidOperationException(
+                    $"자동 재활용 일꾼의 하루 수익이 너무 낮습니다: 최소 {minGross}원, 첫날 순수익 {firstDayNet}원");
+
+            Debug.Log($"[DigGame] 자동 재활용 일꾼 — 하루 {cycles}회 · " +
+                $"지상 광산 총수익 최소 {minGross:N0} / 평균 {totalGross / samples:N0}원 · " +
+                $"고용비·일당 제외 첫날 순수익 최소 {firstDayNet:N0}원");
         }
     }
 }

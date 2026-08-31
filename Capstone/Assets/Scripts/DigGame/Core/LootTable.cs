@@ -37,7 +37,7 @@ namespace DigGame
             new Entry("옛날 동전",     220, 1, MaterialKind.Relic,       1.25f, 0.5f),
         };
 
-        // 시작 지점 보장 배치용. 최저 가격 변동이 나와도 9개 합계가 첫날 할당량을 넘는다.
+        // 시작 지점 보장 배치용. 재활용하면 첫날 할당량 대부분을 안정적으로 채운다.
         static readonly Entry[] StarterLoot =
         {
             new Entry("재활용 비닐 묶음", 35, 1, MaterialKind.General, 0.68f, 5f),
@@ -139,6 +139,27 @@ namespace DigGame
         /// <summary>첫날 진행이 운에 막히지 않도록 시작 지점에 놓는 1칸 표층 쓰레기.</summary>
         public static LootItem RollStarterTrash(System.Random rng) =>
             RollFrom(StarterLoot, ZoneInfo.SignatureColor(Zone.Surface), rng, singleSlotOnly: true);
+
+        /// <summary>압축층·가스층에서 보장되는 위험/보상용 1칸 쓰레기.</summary>
+        public static LootItem RollFeatureTreasure(Zone zone, DigFeature feature, System.Random rng)
+        {
+            LootItem item = RollSingleSlotTreasure(zone, rng);
+            if (feature == DigFeature.CompactCache)
+            {
+                item.Name = "압축 보관된 " + item.Name;
+                item.Value = Mathf.RoundToInt(item.Value * GameConfig.CompactCacheValueMultiplier);
+                item.Color = DigFeatureInfo.ColorOf(feature);
+            }
+            else if (feature == DigFeature.GasPocket)
+            {
+                item.Name = "가스에 보존된 " + item.Name;
+                item.Value = Mathf.RoundToInt(item.Value * GameConfig.GasPocketValueMultiplier);
+                item.Color = DigFeatureInfo.ColorOf(feature);
+                // 가스를 열 때 이미 피해를 받으므로, 자동 획득 때 유해물 피해가 중복되지 않게 한다.
+                if (item.Material == MaterialKind.Hazard) item.Material = MaterialKind.Metal;
+            }
+            return item;
+        }
 
         static LootItem RollFrom(Entry[] table, Color sig, System.Random rng, bool singleSlotOnly)
         {

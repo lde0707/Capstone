@@ -8,12 +8,14 @@ namespace DigGame.Editor
     {
         const string TrashFolder = "Assets/Resources/TrashSprites/";
         const string EnvironmentFolder = "Assets/Resources/EnvironmentPixel/";
+        const string PixelRefreshFolder = "Assets/Resources/PixelRefresh/";
 
         void OnPreprocessTexture()
         {
             bool isTrash = assetPath.StartsWith(TrashFolder, System.StringComparison.OrdinalIgnoreCase);
             bool isEnvironment = assetPath.StartsWith(EnvironmentFolder, System.StringComparison.OrdinalIgnoreCase);
-            if (!isTrash && !isEnvironment) return;
+            bool isPixelRefresh = assetPath.StartsWith(PixelRefreshFolder, System.StringComparison.OrdinalIgnoreCase);
+            if (!isTrash && !isEnvironment && !isPixelRefresh) return;
 
             var importer = (TextureImporter)assetImporter;
             importer.textureType = TextureImporterType.Default;
@@ -24,6 +26,7 @@ namespace DigGame.Editor
             importer.wrapMode = TextureWrapMode.Clamp;
             importer.npotScale = TextureImporterNPOTScale.None;
             importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.isReadable = isPixelRefresh;
         }
     }
 }

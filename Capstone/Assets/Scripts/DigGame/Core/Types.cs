@@ -10,7 +10,8 @@ namespace DigGame
         Clay = 3,       // 2층 — 힘 2
         Stone = 4,      // 3층 — 힘 3
         HardRock = 5,   // 4층 — 힘 4
-        Bedrock = 6     // 파괴 불가
+        Bedrock = 6,    // 파괴 불가
+        Grass = 7       // 지상 잔디 지반 — 파괴 불가
     }
 
     public enum Zone
@@ -19,6 +20,73 @@ namespace DigGame
         Shallow = 1,   // 2층 · 얕은 지하
         Deep = 2,      // 3층 · 깊은 지하
         Abyss = 3      // 4층 · 매우 깊은 지하
+    }
+
+    /// <summary>파기 전에 색으로 식별할 수 있는 지층 변수.</summary>
+    public enum DigFeature
+    {
+        None = 0,
+        LooseSoil = 1,      // 빠르고 기력 소모가 적다
+        CompactCache = 2,   // 느리지만 고가품이 보장된다
+        GasPocket = 3       // 방호복이 없으면 피해를 받는 위험 지층
+    }
+
+    public static class DigFeatureInfo
+    {
+        public static string DisplayName(DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil: return "푸석한 흙";
+                case DigFeature.CompactCache: return "압축 폐기물층";
+                case DigFeature.GasPocket: return "매립 가스층";
+                default: return "일반 지층";
+            }
+        }
+
+        public static string Description(DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil: return "빠르게 파고 기력을 절반만 사용";
+                case DigFeature.CompactCache: return "단단하지만 고가품이 들어 있음";
+                case DigFeature.GasPocket: return "방호복 없이 열면 체력·기력 감소";
+                default: return "";
+            }
+        }
+
+        public static float DurationMultiplier(DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil: return 0.55f;
+                case DigFeature.CompactCache: return 1.55f;
+                case DigFeature.GasPocket: return 1.10f;
+                default: return 1f;
+            }
+        }
+
+        /// <summary>굴착 완료까지 드는 총 기력의 배율.</summary>
+        public static float StaminaMultiplier(DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil: return 0.50f;
+                case DigFeature.CompactCache: return 1.35f;
+                default: return 1f;
+            }
+        }
+
+        public static Color ColorOf(DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil: return new Color32(100, 205, 255, 255);
+                case DigFeature.CompactCache: return new Color32(255, 198, 70, 255);
+                case DigFeature.GasPocket: return new Color32(155, 255, 80, 255);
+                default: return Color.clear;
+            }
+        }
     }
 
     public enum WorkerKind
@@ -75,6 +143,53 @@ namespace DigGame
                 default: return "유물";
             }
         }
+
+        /// <summary>땅속 쓰레기 힌트와 재활용 결과물에 쓰는 재질별 색.</summary>
+        public static Color HintColor(MaterialKind m)
+        {
+            switch (m)
+            {
+                case MaterialKind.General: return new Color32(210, 205, 180, 255);
+                case MaterialKind.Metal: return new Color32(165, 220, 255, 255);
+                case MaterialKind.Glass: return new Color32(120, 245, 235, 255);
+                case MaterialKind.Plastic: return new Color32(255, 155, 220, 255);
+                case MaterialKind.Electronics: return new Color32(120, 255, 145, 255);
+                case MaterialKind.Hazard: return new Color32(255, 235, 80, 255);
+                default: return new Color32(210, 135, 255, 255);
+            }
+        }
+    }
+
+    /// <summary>쓰레기 재질별 재활용 결과와 원물 대비 가격 배율.</summary>
+    public static class RecyclingInfo
+    {
+        public static string ProductName(MaterialKind material)
+        {
+            switch (material)
+            {
+                case MaterialKind.General: return "재생 섬유 묶음";
+                case MaterialKind.Metal: return "정제 금속 캔";
+                case MaterialKind.Glass: return "재생 유리 구슬";
+                case MaterialKind.Plastic: return "플라스틱 펠릿";
+                case MaterialKind.Electronics: return "회수 전자부품";
+                case MaterialKind.Hazard: return "안전 처리 촉매";
+                default: return "복원된 골동품";
+            }
+        }
+
+        public static float ValueMultiplier(MaterialKind material)
+        {
+            switch (material)
+            {
+                case MaterialKind.General: return 1.25f;
+                case MaterialKind.Metal: return 1.55f;
+                case MaterialKind.Glass: return 1.45f;
+                case MaterialKind.Plastic: return 1.40f;
+                case MaterialKind.Electronics: return 1.75f;
+                case MaterialKind.Hazard: return 1.90f;
+                default: return 2.10f;
+            }
+        }
     }
 
     public static class TileInfo
@@ -100,6 +215,20 @@ namespace DigGame
             return p <= 0 ? 0 : p;
         }
 
+        /// <summary>
+        /// 요구 힘보다 강할수록 적용되는 굴착 시간 배율.
+        /// 요구 힘과 같으면 1배이며, 초과 힘 1마다 굴착 속도가 35%씩 증가한다.
+        /// </summary>
+        public static float PowerDigDurationMultiplier(TileKind kind, int power)
+        {
+            int required = RequiredPower(kind);
+            if (required <= 0 || power <= required) return 1f;
+
+            int surplus = power - required;
+            float speed = 1f + surplus * GameConfig.PowerDigSpeedBonusPerSurplus;
+            return 1f / speed;
+        }
+
         public static bool IsWalkable(TileKind kind) => kind == TileKind.Sky || kind == TileKind.Empty;
 
         public static bool IsDiggable(TileKind kind) => RequiredPower(kind) > 0;
@@ -110,6 +239,7 @@ namespace DigGame
             {
                 case TileKind.Sky:      return Color.clear; // 카메라의 실제 하늘 배경이 비친다
                 case TileKind.Empty:    return new Color32(30, 24, 21, 255);
+                case TileKind.Grass:    return new Color32(78, 122, 61, 255);
                 case TileKind.SoftDirt: return new Color32(156, 114, 70, 255);  // 밝은 갈색
                 case TileKind.Clay:     return new Color32(142, 78, 58, 255);   // 붉은 갈색
                 case TileKind.Stone:    return new Color32(112, 114, 124, 255); // 회색
@@ -123,6 +253,7 @@ namespace DigGame
         {
             switch (kind)
             {
+                case TileKind.Grass: return "잔디 지반";
                 case TileKind.SoftDirt: return "무른 흙";
                 case TileKind.Clay: return "굳은 흙";
                 case TileKind.Stone: return "암반";
@@ -148,12 +279,16 @@ namespace DigGame
         {
             switch (kind)
             {
+                case TileKind.Grass:
                 case TileKind.SoftDirt: return Zone.Surface;
                 case TileKind.Clay:     return Zone.Shallow;
                 case TileKind.Stone:    return Zone.Deep;
                 default:                return Zone.Abyss;
             }
         }
+
+        /// <summary>파낸 통로의 가장자리 재질로 그릴 수 있는 지형.</summary>
+        public static bool SupportsPassage(TileKind kind) => IsDiggable(kind) || kind == TileKind.Grass;
     }
 
     public static class ZoneInfo

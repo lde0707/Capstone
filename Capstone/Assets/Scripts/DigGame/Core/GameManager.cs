@@ -21,6 +21,8 @@ namespace DigGame
         public WorldView View { get; private set; }
         public PlayerController Player { get; private set; }
         public GameHUD Hud { get; set; }
+        /// <summary>지상에 자라나는 마을 — 하루하루의 보상.</summary>
+        public Village Village { get; private set; }
 
         public Vector2Int SurfaceDropCell { get; private set; }
         public Vector2Int RecycleDropCell { get; private set; }
@@ -33,7 +35,11 @@ namespace DigGame
         // ---------- 경제 / 일일 사이클 ----------
         public int Money { get; private set; }
         public int Day { get; private set; } = 1;
-        public int Quota { get; private set; }
+        public int Quota { get; private set; }               // 지금 도전 중인 누적 목표
+        public int BaseQuota { get; private set; }           // 오늘 꼭 채워야 하는 계약 할당량 (1단계)
+        public int PreviousQuota { get; private set; }       // 직전 단계 목표 (진행바 기준선)
+        public int QuotaStage { get; private set; } = 1;     // 지금 도전 중인 단계
+        public int QuotaCleared { get; private set; }        // 오늘 넘긴 단계 수
         public int DeliveredToday { get; private set; }
         public float TimeLeft { get; private set; }             // 오늘 남은 시간
         public GameState State { get; private set; } = GameState.Day;
@@ -52,7 +58,32 @@ namespace DigGame
 
         public bool ShopOpen { get; private set; }              // 낮의 간이 강화 상점
         public bool IsRunning => State == GameState.Day;
-        public float QuotaProgress01 => Quota <= 0 ? 0f : Mathf.Clamp01(DeliveredToday / (float)Quota);
+        /// <summary>오늘의 단계를 전부 넘겼는가.</summary>
+        public bool AllQuotaStagesCleared => QuotaCleared >= GameConfig.MaxQuotaStages;
+
+        /// <summary>지금 단계의 진행률 (직전 목표 → 현재 목표).</summary>
+        public float QuotaProgress01
+        {
+            get
+            {
+                if (AllQuotaStagesCleared) return 1f;
+                int span = Quota - PreviousQuota;
+                if (span <= 0) return 0f;
+                return Mathf.Clamp01((DeliveredToday - PreviousQuota) / (float)span);
+            }
+        }
+
+        /// <summary>지금 단계를 채우기까지 남은 금액.</summary>
+        public int QuotaRemaining => Mathf.Max(0, Quota - DeliveredToday);
+
+        /// <summary>정산 보너스 — 오늘 넘긴 마지막 단계 목표를 기준으로 커진다.</summary>
+        public int QuotaCompletionBonus => Mathf.RoundToInt(
+            (QuotaCleared > 0 ? PreviousQuota : BaseQuota) * GameConfig.QuotaCompletionBonusRate);
+
+        /// <summary>계약 할당량(1단계) 기준 부족액. 2단계부터는 못 채워도 해고되지 않는다.</summary>
+        public int QuotaShortfall => Mathf.Max(0, BaseQuota - DeliveredToday);
+        public int QuotaShortfallPenalty => Mathf.CeilToInt(
+            QuotaShortfall * GameConfig.QuotaShortfallPenaltyMultiplier);
         public int Seed { get; private set; }
 
         PetCompanion _petObj;
@@ -71,8 +102,7 @@ namespace DigGame
             ShopOpen = false;
             Money = GameConfig.StartingMoney;
             Day = 1;
-            Quota = GameConfig.QuotaForDay(Day);
-            DeliveredToday = 0;
+            BeginDayQuota();
             TimeLeft = GameConfig.DayLengthSeconds;
             HasRecycleStation = false;
             RecycleLevel = 0;
@@ -104,6 +134,9 @@ namespace DigGame
             // 공용 투입구는 처음부터 존재하고, 구매 업그레이드는 판매 배율만 강화한다.
             View.ShowRecycleStation(RecycleRect, RecycleLevel);
 
+            Village = gameObject.AddComponent<Village>();
+            Village.Build(this);
+
             var playerGo = new GameObject("Player");
             playerGo.transform.SetParent(transform, false);
             Player = playerGo.AddComponent<PlayerController>();
@@ -113,9 +146,13 @@ namespace DigGame
                 SetupCamera(playerGo.transform);
             View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
 
-            Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 시작 지점 바로 아래 쓰레기부터 수거하자!");
+            Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 지상 입구 아래 쓰레기부터 수거하자!");
             Log("쓰레기는 지상 왼쪽 분리수거장 앞에서 E를 눌러 버린다");
+            Log($"잔디 지반은 팔 수 없다 · 스폰 오른쪽 {GameConfig.SurfaceEntranceOffsetX}칸의 통로로 지하에 들어가자");
+            Log($"할당량 달성 보너스 +{QuotaCompletionBonus:N0}원 · 미달 시 부족액의 x{GameConfig.QuotaShortfallPenaltyMultiplier:0.00} 긴급 정산");
             Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
+            Log($"채울 때마다 더 큰 다음 목표가 열린다 (하루 최대 {GameConfig.MaxQuotaStages}단계) — 단계마다 마을이 커진다");
+            Log("할당량을 채우면 지상의 내 집이 빛나면서 커진다 — 7일이면 도시가 된다");
         }
 
         void OnDestroy()
@@ -270,15 +307,39 @@ namespace DigGame
                 lines.Add($"마감 때 지하에 있어서 가방을 몰수당했다 (-{lost:N0}원어치)");
             }
 
-            // 2) 할당량 판정
-            if (Quota > 0 && DeliveredToday < Quota)
+            // 2) 할당량 판정 — 달성하면 보너스, 조금 모자라면 저축으로 긴급 정산한다.
+            if (BaseQuota > 0 && DeliveredToday < BaseQuota)
             {
-                GameOver($"{Day}일차 할당량 미달 ({DeliveredToday:N0} / {Quota:N0}원)");
-                return;
+                int shortfall = BaseQuota - DeliveredToday;
+                int penalty = Mathf.CeilToInt(shortfall * GameConfig.QuotaShortfallPenaltyMultiplier);
+                if (Money < penalty)
+                {
+                    GameOver($"{Day}일차 할당량 미달 · 긴급 정산금 부족 " +
+                        $"({DeliveredToday:N0} / {BaseQuota:N0}원, 필요 {penalty:N0}원)");
+                    return;
+                }
+
+                Money -= penalty;
+                lines.Add($"할당량 {shortfall:N0}원 부족 — 긴급 정산 -{penalty:N0}원");
             }
-            lines.Add($"할당량 달성! {DeliveredToday:N0} / {Quota:N0}원");
+            else
+            {
+                int bonus = QuotaCompletionBonus;
+                Money += bonus;
+                lines.Add($"할당량 {QuotaCleared}단계 달성! {DeliveredToday:N0}원 반입 · 계약 보너스 +{bonus:N0}원");
+            }
 
             // 3) 일꾼 일당 — 못 주면 일꾼이 떠난다
+            int autoIncome = 0;
+            int autoItems = 0;
+            for (int i = 0; i < DiscoveredMines.Count; i++)
+            {
+                autoIncome += DiscoveredMines[i].AutoIncomeToday;
+                autoItems += DiscoveredMines[i].AutoItemsToday;
+            }
+            if (autoIncome > 0)
+                lines.Add($"도시광산 자동 재활용 {autoItems}개 · 오늘 수익 +{autoIncome:N0}원");
+
             int wages = 0;
             foreach (var w in Workers)
                 wages += w.Kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
@@ -351,13 +412,15 @@ namespace DigGame
             if (State != GameState.Night) return;
 
             Day++;
-            Quota = GameConfig.QuotaForDay(Day);
-            DeliveredToday = 0;
+            BeginDayQuota();
             TimeLeft = GameConfig.DayLengthSeconds;
             if (Player != null) Player.Gear.OnNewDay();
+            for (int i = 0; i < DiscoveredMines.Count; i++)
+                DiscoveredMines[i].ResetDailyIncome();
             State = GameState.Day;
 
             Log($"{Day}일차 — 오늘 할당량 {Quota:N0}원");
+            if (Village != null) Village.OnNewDay(Day);
         }
 
         // ==================================================================
@@ -419,11 +482,50 @@ namespace DigGame
                     return;
                 }
 
-                DeliverToSurface(Player.TakeAll(), "분리수거장 투입");
+                RecycleAtFactory(Player.TakeAll());
+                return;
+            }
+
+            var mine = Player.MineHere();
+            if (mine != null)
+            {
+                InteractMine(mine);
                 return;
             }
 
             ToggleShop();
+        }
+
+        void InteractMine(MineSite mine)
+        {
+            // 가방에 물건이 있으면 먼저 안전 보관한다. 지하에서 마감되어도 이 보관품은 몰수되지 않는다.
+            if (Player.Inventory.Count > 0)
+            {
+                int stored = mine.StoreFrom(Player.Inventory);
+                if (stored > 0)
+                    Log($"도시광산 #{mine.Id} 안전 보관함에 {stored}개 맡김 · 일꾼이 자동 재활용 가능");
+                else
+                    Log($"도시광산 #{mine.Id} 보관함이 가득 찼다 ({mine.Stockpile.Count}/{GameConfig.MineStockpileCap})");
+                return;
+            }
+
+            int taken = 0;
+            while (mine.TryTakeFitting(Player.BagCapacity - Player.InventoryVolume, out var item))
+            {
+                if (!Player.TryReceiveStoredItem(item))
+                {
+                    mine.Stockpile.Insert(0, item);
+                    break;
+                }
+                taken++;
+            }
+
+            if (taken > 0)
+                Log($"도시광산 #{mine.Id} 보관품 {taken}개 회수 · 가방 {Player.InventoryVolume}/{Player.BagCapacity}");
+            else if (mine.Stockpile.Count > 0)
+                Log("가방에 들어갈 공간이 없다");
+            else
+                Log("도시광산 보관함이 비어 있다 · H 수거 / J 운반 일꾼 고용");
         }
 
         void ToggleShop()
@@ -452,8 +554,15 @@ namespace DigGame
             }
 
             DiscoveredMines.Add(site);
+
+            // 고용 전에도 시설의 용도를 바로 체험할 수 있게 발견 보상을 보관함에 넣는다.
+            var discoveryRng = new System.Random(Seed * 397 ^ site.Id * 7919);
+            int cached = 0;
+            for (int i = 0; i < GameConfig.MineDiscoveryCacheCount; i++)
+                if (site.ExtractOne(discoveryRng)) cached++;
+
             View.ShowMine(site);
-            Log($"지하 분리수거 구역 발견! {site.Label} · 수거 가능량 {site.Reserve}");
+            Log($"도시광산 발견! {site.Label} · 샘플 고철 {cached}개 · E로 회수/안전 보관");
         }
 
         void RefreshMineVisuals()
@@ -473,9 +582,104 @@ namespace DigGame
             int paid = Mathf.RoundToInt(value * SellMultiplier);
             Money += paid;
             DeliveredToday += paid;
+            CheckQuotaStages();
 
             string bonus = SellMultiplier > 1f ? $" (분리수거 x{SellMultiplier:0.0})" : "";
             Log($"{source}: {items.Count}개 판매 → +{paid:N0}원{bonus}");
+        }
+
+        /// <summary>
+        /// 재질별 결과물로 가공한 뒤 판매한다. 원물 판매보다 높은 재질 배율과
+        /// 분리수거장 설비 배율이 함께 적용되며, 서로 다른 결과물 에셋을 보여준다.
+        /// </summary>
+        public int RecycleAtFactory(List<LootItem> items, string source = "지상 분리수거장")
+        {
+            if (items == null || items.Count == 0) return 0;
+
+            int rawValue = 0;
+            int paid = 0;
+            var materials = new HashSet<MaterialKind>();
+            var productCounts = new Dictionary<MaterialKind, int>();
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                LootItem item = items[i];
+                rawValue += item.Value;
+                float multiplier = RecyclingInfo.ValueMultiplier(item.Material) * SellMultiplier;
+                paid += Mathf.RoundToInt(item.Value * multiplier);
+                materials.Add(item.Material);
+                productCounts[item.Material] = productCounts.TryGetValue(item.Material, out int count)
+                    ? count + 1 : 1;
+            }
+
+            Money += paid;
+            DeliveredToday += paid;
+            CheckQuotaStages();
+            View.ShowRecyclingOutputs(materials);
+
+            var products = new List<string>();
+            foreach (var pair in productCounts)
+                products.Add($"{RecyclingInfo.ProductName(pair.Key)} x{pair.Value}");
+
+            float totalMultiplier = rawValue <= 0 ? 1f : paid / (float)rawValue;
+            Log($"{source}: {string.Join(", ", products)} → +{paid:N0}원 (원물 대비 x{totalMultiplier:0.00})");
+            return paid;
+        }
+
+        /// <summary>새 하루의 할당량 단계를 1단계로 초기화한다.</summary>
+        void BeginDayQuota()
+        {
+            BaseQuota = GameConfig.QuotaForDay(Day);
+            Quota = BaseQuota;
+            PreviousQuota = 0;
+            QuotaStage = 1;
+            QuotaCleared = 0;
+            DeliveredToday = 0;
+        }
+
+        /// <summary>
+        /// 할당량을 넘긴 순간 — 정산까지 기다리지 않고 바로 보상을 준다.
+        /// 단계를 넘길 때마다 지상의 집이 빛나며 커지고 주민이 늘어나며,
+        /// 곧바로 더 큰 다음 목표가 열린다. (한 번에 여러 단계를 넘길 수도 있다)
+        /// </summary>
+        void CheckQuotaStages()
+        {
+            if (Quota <= 0 || State != GameState.Day) return;
+
+            while (DeliveredToday >= Quota && QuotaCleared < GameConfig.MaxQuotaStages)
+            {
+                QuotaCleared++;
+                PreviousQuota = Quota;
+
+                // 단계를 넘길 때마다 마을이 자란다.
+                // (집이 커지는 건 하루의 첫 단계 한 번뿐 — 나머지는 이웃·주민이 늘어난다)
+                if (Village != null) Village.OnQuotaStageCleared(Day, QuotaCleared);
+
+                if (QuotaCleared >= GameConfig.MaxQuotaStages)
+                {
+                    QuotaStage = GameConfig.MaxQuotaStages;
+                    Log($"오늘 할당량 {GameConfig.MaxQuotaStages}단계를 전부 넘겼다! 더 요구할 게 없다");
+                    break;
+                }
+
+                QuotaStage = QuotaCleared + 1;
+                Quota = GameConfig.QuotaForStage(Day, QuotaStage);
+                Log($"할당량 {QuotaCleared}단계 달성! 다음 목표 {Quota:N0}원 " +
+                    $"— {Quota - PreviousQuota:N0}원 더 모으면 마을이 또 커진다");
+            }
+        }
+
+        /// <summary>현재 공장 설비를 기준으로 한 재질별 재활용 예상 판매가.</summary>
+        public int EstimateRecycledValue(IEnumerable<LootItem> items)
+        {
+            if (items == null) return 0;
+
+            int total = 0;
+            foreach (LootItem item in items)
+                total += Mathf.RoundToInt(item.Value
+                    * RecyclingInfo.ValueMultiplier(item.Material)
+                    * SellMultiplier);
+            return total;
         }
 
         // ==================================================================
@@ -629,7 +833,8 @@ namespace DigGame
             if (kind == WorkerKind.Miner) mine.Miners++;
             else mine.Haulers++;
 
-            Log($"{(kind == WorkerKind.Miner ? "수거" : "운반")} 일꾼 고용 → 지하 수거장 #{mine.Id} (-{cost:N0}원, 일당 {wage}원)");
+            Log($"{(kind == WorkerKind.Miner ? "자동 재활용" : "대량 운반")} 일꾼 고용 → " +
+                $"도시광산 #{mine.Id} (-{cost:N0}원, 일당 {wage}원)");
         }
 
         // ==================================================================

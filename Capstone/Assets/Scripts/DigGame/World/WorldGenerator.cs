@@ -49,7 +49,8 @@ namespace DigGame
 
                     int depth = WorldGrid.DepthOf(y);
                     TileKind kind;
-                    if (depth < b1) kind = TileKind.SoftDirt;
+                    if (depth < GameConfig.GrassLayerRows) kind = TileKind.Grass;
+                    else if (depth < b1) kind = TileKind.SoftDirt;
                     else if (depth < b2) kind = TileKind.Clay;
                     else if (depth < b3) kind = TileKind.Stone;
                     else kind = TileKind.HardRock;
@@ -57,6 +58,9 @@ namespace DigGame
                     grid.SetRaw(x, y, kind);
                 }
             }
+
+            // 스폰 근처의 잔디 지반을 관통하는 고정 입구. 잔디 대신 이 통로로만 진입한다.
+            CarveSurfaceEntrance(grid);
 
             // ---------- 2) 광산 (층마다 일정 개수, 서로 떨어뜨려서) ----------
             var placed = new List<MineSite>();
@@ -102,8 +106,43 @@ namespace DigGame
             // 확률 운이 나빠도 각 층에 1칸 쓰레기가 반드시 흩어져 있도록 보장한다.
             PlaceGuaranteedSingleSlotTrash(grid, rng);
             PlaceStarterTrash(grid, rng);
+            PlaceDigFeatures(grid, rng);
 
             return grid;
+        }
+
+        /// <summary>
+        /// 색으로 미리 판단할 수 있는 위험/보상 지층을 배치한다.
+        /// 시작 보장 줄과 광산은 건드리지 않아 첫날 진행과 시설 발견을 막지 않는다.
+        /// </summary>
+        static void PlaceDigFeatures(WorldGrid grid, System.Random rng)
+        {
+            for (int y = GameConfig.StarterTrashRow + 1; y < grid.Height - 2; y++)
+            {
+                for (int x = 1; x < grid.Width - 1; x++)
+                {
+                    TileKind kind = grid.Get(x, y);
+                    if (!TileInfo.IsDiggable(kind) || grid.TryGetMineSite(x, y, out _)) continue;
+
+                    Zone zone = TileInfo.ZoneOf(kind);
+                    float gasChance = zone == Zone.Deep ? GameConfig.GasPocketChanceDeep
+                        : zone == Zone.Abyss ? GameConfig.GasPocketChanceAbyss : 0f;
+                    double roll = rng.NextDouble();
+                    DigFeature feature;
+                    if (roll < GameConfig.LooseSoilChance)
+                        feature = DigFeature.LooseSoil;
+                    else if (roll < GameConfig.LooseSoilChance + GameConfig.CompactCacheChance)
+                        feature = DigFeature.CompactCache;
+                    else if (roll < GameConfig.LooseSoilChance + GameConfig.CompactCacheChance + gasChance)
+                        feature = DigFeature.GasPocket;
+                    else
+                        continue;
+
+                    grid.PutDigFeature(x, y, feature);
+                    if (feature == DigFeature.CompactCache || feature == DigFeature.GasPocket)
+                        grid.PutTreasure(x, y, LootTable.RollFeatureTreasure(zone, feature, rng));
+                }
+            }
         }
 
         static void PlaceGuaranteedSingleSlotTrash(WorldGrid grid, System.Random rng)
@@ -135,9 +174,9 @@ namespace DigGame
         /// <summary>시작점 바로 아래에 첫 할당량을 벌 수 있는 1칸 쓰레기를 보장한다.</summary>
         static void PlaceStarterTrash(WorldGrid grid, System.Random rng)
         {
-            int center = grid.Width / 2;
-            int startX = center - GameConfig.StarterTrashCount / 2;
-            int y = GameConfig.SurfaceRow;
+            int entranceX = SurfaceEntranceX(grid);
+            int startX = entranceX - GameConfig.StarterTrashCount / 2;
+            int y = GameConfig.StarterTrashRow;
 
             for (int i = 0; i < GameConfig.StarterTrashCount; i++)
             {
@@ -145,6 +184,20 @@ namespace DigGame
                 if (!TileInfo.IsDiggable(grid.Get(x, y))) continue;
                 if (grid.TryGetMineSite(x, y, out _)) continue;
                 grid.PutTreasure(x, y, LootTable.RollStarterTrash(rng));
+            }
+        }
+
+        public static int SurfaceEntranceX(WorldGrid grid) =>
+            Mathf.Clamp(grid.Width / 2 + GameConfig.SurfaceEntranceOffsetX, 1, grid.Width - 2);
+
+        static void CarveSurfaceEntrance(WorldGrid grid)
+        {
+            int x = SurfaceEntranceX(grid);
+            for (int y = GameConfig.SurfaceRow;
+                 y < GameConfig.SurfaceRow + GameConfig.GrassLayerRows;
+                 y++)
+            {
+                grid.Set(x, y, TileKind.Empty);
             }
         }
 

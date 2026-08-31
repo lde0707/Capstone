@@ -5,7 +5,7 @@ using UnityEngine.Tilemaps;
 namespace DigGame
 {
     /// <summary>
-    /// WorldGrid 를 OPP 연속 암반과 16방향 통로 오토타일로 그린다.
+    /// WorldGrid 를 CC0 픽셀 흙과 16방향 통로 오토타일로 그린다.
     /// 지하 시야 제한(포그), 굴착 사거리 하이라이트도 여기서 담당한다.
     /// </summary>
     public class WorldView : MonoBehaviour
@@ -21,10 +21,15 @@ namespace DigGame
 
         WorldGrid _grid;
         Tilemap _ground;
+        Tilemap _digFeatureMap;
+        Tilemap _buriedHintMap;
 
         readonly Dictionary<TileKind, TileBase> _flatTiles = new Dictionary<TileKind, TileBase>();
         readonly Dictionary<TileKind, TileBase[]> _terrainTiles = new Dictionary<TileKind, TileBase[]>();
-        readonly TileBase[] _passageTiles = new TileBase[16 * 16];
+        /// <summary>통로 타일은 (지층, 마스크*변형) 조합이 많아 필요할 때 만들어 캐싱한다.</summary>
+        readonly Dictionary<int, TileBase> _passageTiles = new Dictionary<int, TileBase>();
+        readonly Dictionary<DigFeature, TileBase> _digFeatureTiles = new Dictionary<DigFeature, TileBase>();
+        readonly Dictionary<MaterialKind, TileBase> _buriedHintTiles = new Dictionary<MaterialKind, TileBase>();
 
         readonly Dictionary<Vector2Int, GameObject> _treasureMarkers = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<int, GameObject> _mineMarkers = new Dictionary<int, GameObject>();
@@ -46,12 +51,18 @@ namespace DigGame
             uGrid.cellSize = new Vector3(GameConfig.CellSize, GameConfig.CellSize, 0f);
 
             _ground = MakeTilemap(gridGo.transform, "Ground", OrderGround);
+            _digFeatureMap = MakeTilemap(gridGo.transform, "Dig Feature Hints", OrderTreasure - 2);
+            _digFeatureMap.gameObject.AddComponent<BuriedHintMapPulse>();
+            _buriedHintMap = MakeTilemap(gridGo.transform, "Buried Trash Hints", OrderTreasure);
+            _buriedHintMap.gameObject.AddComponent<BuriedHintMapPulse>();
 
             _markerRoot = new GameObject("Markers").transform;
             _markerRoot.SetParent(transform, false);
 
             BuildTileAssets();
             PaintGround();
+            BuildDigFeatureHints();
+            BuildBuriedTrashHints();
             BuildSmoothFog();
             BuildHighlight();
 
@@ -72,9 +83,17 @@ namespace DigGame
                 DestroyGenerated(t);
             foreach (var set in _terrainTiles.Values)
                 for (int i = 0; i < set.Length; i++) DestroyGenerated(set[i]);
-            for (int i = 0; i < _passageTiles.Length; i++) DestroyGenerated(_passageTiles[i]);
+            foreach (var tile in _passageTiles.Values)
+                DestroyGenerated(tile);
+            foreach (var tile in _digFeatureTiles.Values)
+                DestroyGenerated(tile);
+            foreach (var tile in _buriedHintTiles.Values)
+                DestroyGenerated(tile);
             _flatTiles.Clear();
             _terrainTiles.Clear();
+            _passageTiles.Clear();
+            _digFeatureTiles.Clear();
+            _buriedHintTiles.Clear();
 
             DestroyGenerated(_fogMaterial);
         }
@@ -107,51 +126,44 @@ namespace DigGame
             sky.color = Color.white;
             _flatTiles[TileKind.Sky] = sky;
 
-            // 열린 방향 16종 x 연속 배경 패턴 16종. 파낸 칸 자체가 통로가 된다.
-            for (int mask = 0; mask < 16; mask++)
-            {
-                for (int pattern = 0; pattern < 16; pattern++)
-                {
-                    int index = mask * 16 + pattern;
-                    var tile = ScriptableObject.CreateInstance<Tile>();
-                    tile.hideFlags = HideFlags.DontSave;
-                    tile.sprite = EnvironmentSpriteCatalog.PassageForMask(mask, pattern)
-                               ?? SpriteFactory.Solid(TileInfo.ColorOf(TileKind.Empty));
-                    tile.color = Color.white;
-                    _passageTiles[index] = tile;
-                }
-            }
-
             foreach (TileKind kind in System.Enum.GetValues(typeof(TileKind)))
             {
                 if (kind == TileKind.Sky || kind == TileKind.Empty) continue;
 
-                // 128px 원본을 4x4로 잘라 월드 좌표에 맞춰 다시 이어 붙인다.
+                // 16px 원본 흙에서 변형을 만들어 반복 무늬를 줄인다.
                 var set = new TileBase[16];
                 for (int i = 0; i < set.Length; i++)
                 {
                     var tile = ScriptableObject.CreateInstance<Tile>();
                     tile.hideFlags = HideFlags.DontSave;
-                    tile.sprite = EnvironmentSpriteCatalog.GroundFill(i)
+                    tile.sprite = EnvironmentSpriteCatalog.GroundFill(kind, i)
                                   ?? SpriteFactory.Noisy(TileInfo.ColorOf(kind), i + (int)kind * 977);
-                    tile.color = TerrainTint(kind);
+                    tile.color = Color.white;
                     set[i] = tile;
                 }
                 _terrainTiles[kind] = set;
             }
+
+            // 통로 타일 자체는 8방향 조합이 256가지라 PassageTile() 에서 필요할 때 만들지만,
+            // 지층별 통로 아틀라스는 여기서 한 번 데워둔다 (첫 굴착 때 프레임이 튀지 않도록).
+            foreach (TileKind kind in System.Enum.GetValues(typeof(TileKind)))
+                if (TileInfo.SupportsPassage(kind)) PassageTile(kind, 0, 0);
         }
 
-        static Color TerrainTint(TileKind kind)
+        /// <summary>캐기 전 지층 색조를 유지하는 8방향 연결 통로 타일 (지연 생성).</summary>
+        TileBase PassageTile(TileKind kind, int openMask, int pattern)
         {
-            switch (kind)
-            {
-                case TileKind.SoftDirt: return new Color32(255, 242, 205, 255);
-                case TileKind.Clay: return new Color32(245, 170, 135, 255);
-                case TileKind.Stone: return new Color32(175, 190, 210, 255);
-                case TileKind.HardRock: return new Color32(115, 130, 175, 255);
-                case TileKind.Bedrock: return new Color32(70, 72, 92, 255);
-                default: return Color.white;
-            }
+            int index = (openMask & 255) * 4 + (pattern & 3);
+            int key = (int)kind * 1024 + index;
+            if (_passageTiles.TryGetValue(key, out var cached)) return cached;
+
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = EnvironmentSpriteCatalog.PassageForMask(kind, openMask, pattern)
+                       ?? SpriteFactory.Solid(TileInfo.ColorOf(TileKind.Empty));
+            tile.color = Color.white;
+            _passageTiles[key] = tile;
+            return tile;
         }
 
         /// <summary>grid 좌표(y가 아래로 증가) → 타일맵 셀 좌표(y가 위로 증가).</summary>
@@ -181,10 +193,15 @@ namespace DigGame
             TileKind kind = _grid.Get(x, y);
             if (kind == TileKind.Sky) return _flatTiles[kind];
 
-            int pattern = PositiveMod(x, 4) + PositiveMod(y, 4) * 4;
             if (kind == TileKind.Empty)
-                return _passageTiles[PassageMask(x, y) * 16 + pattern];
+            {
+                TileKind originalGround = _grid.OriginalGroundAt(x, y);
+                if (!TileInfo.SupportsPassage(originalGround)) return null;
+                int passagePattern = PositiveMod(x, 2) + PositiveMod(y, 2) * 2;
+                return PassageTile(originalGround, PassageMask(x, y), passagePattern);
+            }
 
+            int pattern = PositiveMod(x, 4) + PositiveMod(y, 4) * 4;
             return _terrainTiles.TryGetValue(kind, out var set) ? set[pattern] : null;
         }
 
@@ -196,11 +213,23 @@ namespace DigGame
 
         int PassageMask(int x, int y)
         {
+            bool up = IsPassage(x, y - 1);
+            bool right = IsPassage(x + 1, y);
+            bool down = IsPassage(x, y + 1);
+            bool left = IsPassage(x - 1, y);
+
             int mask = 0;
-            if (IsPassage(x, y - 1)) mask |= 1; // 위
-            if (IsPassage(x + 1, y)) mask |= 2; // 오른쪽
-            if (IsPassage(x, y + 1)) mask |= 4; // 아래
-            if (IsPassage(x - 1, y)) mask |= 8; // 왼쪽
+            if (up) mask |= 1;
+            if (right) mask |= 2;
+            if (down) mask |= 4;
+            if (left) mask |= 8;
+
+            // 대각은 양옆까지 다 뚫렸을 때만 — 벽에 붙은 모서리는 남기고
+            // 넓게 파낸 자리에 떠 있던 흙 찌꺼기만 없앤다.
+            if (up && right && IsPassage(x + 1, y - 1)) mask |= 16;
+            if (down && right && IsPassage(x + 1, y + 1)) mask |= 32;
+            if (down && left && IsPassage(x - 1, y + 1)) mask |= 64;
+            if (up && left && IsPassage(x - 1, y - 1)) mask |= 128;
             return mask;
         }
 
@@ -289,7 +318,81 @@ namespace DigGame
                 }
 
             if (TileInfo.IsWalkable(kind) && _grid.HasTreasure(x, y))
+            {
+                HideBuriedHint(x, y);
                 ShowTreasureMarker(x, y);
+            }
+            if (TileInfo.IsWalkable(kind)) HideDigFeatureHint(x, y);
+        }
+
+        /// <summary>특수 지층은 포그 아래에서 색과 크기가 다른 균열 표식으로 보인다.</summary>
+        void BuildDigFeatureHints()
+        {
+            foreach (var (cell, feature) in _grid.AllDigFeatures)
+            {
+                Vector3Int tileCell = ToCell(cell.x, cell.y);
+                _digFeatureMap.SetTile(tileCell, DigFeatureTile(feature));
+                float scale = feature == DigFeature.LooseSoil ? 0.42f
+                    : feature == DigFeature.CompactCache ? 0.66f : 0.78f;
+                _digFeatureMap.SetTransformMatrix(tileCell, Matrix4x4.TRS(
+                    Vector3.zero, Quaternion.identity, Vector3.one * scale));
+            }
+        }
+
+        TileBase DigFeatureTile(DigFeature feature)
+        {
+            if (_digFeatureTiles.TryGetValue(feature, out var cached)) return cached;
+            Color color = DigFeatureInfo.ColorOf(feature);
+            color.a = 0.58f;
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = SpriteFactory.Diamond(Color.white);
+            tile.color = color;
+            tile.flags = TileFlags.LockColor;
+            _digFeatureTiles[feature] = tile;
+            return tile;
+        }
+
+        void HideDigFeatureHint(int x, int y)
+        {
+            if (_digFeatureMap != null)
+                _digFeatureMap.SetTile(ToCell(x, y), null);
+        }
+
+        /// <summary>
+        /// 아직 땅속에 있는 쓰레기를 은은한 재질색 광점으로 표시한다.
+        /// 포그보다 아래에 그려져 플레이어 시야 안에 들어왔을 때만 보인다.
+        /// </summary>
+        void BuildBuriedTrashHints()
+        {
+            foreach (var (cell, item) in _grid.AllTreasures)
+            {
+                if (_grid.IsWalkable(cell.x, cell.y)) continue;
+                Vector3Int tileCell = ToCell(cell.x, cell.y);
+                _buriedHintMap.SetTile(tileCell, BuriedHintTile(item.Material));
+                _buriedHintMap.SetTransformMatrix(tileCell, Matrix4x4.TRS(
+                    Vector3.zero, Quaternion.identity, Vector3.one * 0.52f));
+            }
+        }
+
+        TileBase BuriedHintTile(MaterialKind material)
+        {
+            if (_buriedHintTiles.TryGetValue(material, out var cached)) return cached;
+            Color color = MaterialInfo.HintColor(material);
+            color.a = 0.54f;
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = SpriteFactory.Diamond(Color.white);
+            tile.color = color;
+            tile.flags = TileFlags.LockColor;
+            _buriedHintTiles[material] = tile;
+            return tile;
+        }
+
+        void HideBuriedHint(int x, int y)
+        {
+            if (_buriedHintMap != null)
+                _buriedHintMap.SetTile(ToCell(x, y), null);
         }
 
         void ShowTreasureMarker(int x, int y)
@@ -332,6 +435,7 @@ namespace DigGame
         void HandleTreasureRemoved(int x, int y)
         {
             var key = new Vector2Int(x, y);
+            HideBuriedHint(x, y);
             if (_treasureMarkers.TryGetValue(key, out var go))
             {
                 Destroy(go);
@@ -406,7 +510,8 @@ namespace DigGame
                 _surfaceRecycle = new GameObject("SurfaceTrashDropOff");
                 _surfaceRecycle.transform.SetParent(_markerRoot, false);
                 Vector3 center = WorldGrid.RectCenterToWorld(rect);
-                AddBinArt(_surfaceRecycle.transform, center, 1.28f, OrderMine, "SurfaceBin");
+                _surfaceRecycle.transform.position = center;
+                AddRecyclerFactoryArt(_surfaceRecycle.transform, center, rect, OrderMine, "SurfaceBin");
                 AddRecycleSign(_surfaceRecycle.transform,
                     center + Vector3.up * (0.34f * GameConfig.CellSize), 3, 0.55f,
                     OrderMine + 1, "SurfaceRecycleSign");
@@ -420,6 +525,45 @@ namespace DigGame
             {
                 sign.sprite = EnvironmentSpriteCatalog.RecycleItem(level <= 0 ? 3 : level == 1 ? 7 : 11);
                 sign.color = Color.white;
+            }
+        }
+
+        void AddRecyclerFactoryArt(Transform parent, Vector3 worldPosition, RectInt rect,
+            int sortingOrder, string name)
+        {
+            var machine = new GameObject(name);
+            machine.transform.SetParent(parent, false);
+            machine.transform.position = worldPosition + Vector3.up * (0.32f * GameConfig.CellSize);
+            var sr = machine.AddComponent<SpriteRenderer>();
+            sr.sprite = EnvironmentSpriteCatalog.RecyclerFactory() ?? EnvironmentSpriteCatalog.SurfaceBin();
+            sr.sortingOrder = sortingOrder;
+
+            if (sr.sprite != null)
+            {
+                float targetWidth = rect.width * GameConfig.CellSize * 0.92f;
+                float scale = targetWidth / Mathf.Max(0.01f, sr.sprite.bounds.size.x);
+                machine.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        /// <summary>재활용된 종류별 결과물을 공장 위로 잠깐 띄운다.</summary>
+        public void ShowRecyclingOutputs(IEnumerable<MaterialKind> materials)
+        {
+            if (_surfaceRecycle == null) return;
+            var outputMaterials = new List<MaterialKind>(materials);
+            float centerOffset = (outputMaterials.Count - 1) * 0.5f;
+            for (int index = 0; index < outputMaterials.Count; index++)
+            {
+                MaterialKind material = outputMaterials[index];
+                var go = new GameObject($"RecycledOutput({material})");
+                go.transform.SetParent(_markerRoot, false);
+                go.transform.position = _surfaceRecycle.transform.position
+                    + new Vector3((index - centerOffset) * 0.34f, 1.65f, 0f) * GameConfig.CellSize;
+                go.transform.localScale = Vector3.one * 0.8f;
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = EnvironmentSpriteCatalog.RecycledProduct(material);
+                sr.sortingOrder = OrderHighlight;
+                go.AddComponent<RecyclingOutputFx>();
             }
         }
 
@@ -527,6 +671,48 @@ namespace DigGame
         void Update()
         {
             transform.position = _base + new Vector3(0f, Mathf.Sin(Time.time * 3f + _phase) * 0.07f, 0f);
+        }
+    }
+
+    /// <summary>수천 개의 개별 Update 없이 묻힌 쓰레기 힌트 타일맵 전체를 맥동시킨다.</summary>
+    public class BuriedHintMapPulse : MonoBehaviour
+    {
+        Tilemap _tilemap;
+        float _phase;
+
+        void Start()
+        {
+            _tilemap = GetComponent<Tilemap>();
+            _phase = Random.value * 6.28f;
+        }
+
+        void Update()
+        {
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3.4f + _phase);
+            if (_tilemap != null)
+                _tilemap.color = new Color(1f, 1f, 1f, 0.55f + pulse * 0.40f);
+        }
+    }
+
+    /// <summary>공장에서 나온 재활용 결과물 아이콘을 위로 띄운 뒤 사라지게 한다.</summary>
+    public class RecyclingOutputFx : MonoBehaviour
+    {
+        SpriteRenderer _renderer;
+        float _life = 1.8f;
+
+        void Start() => _renderer = GetComponent<SpriteRenderer>();
+
+        void Update()
+        {
+            transform.position += Vector3.up * (0.7f * Time.deltaTime);
+            _life -= Time.deltaTime;
+            if (_renderer != null)
+            {
+                Color color = _renderer.color;
+                color.a = Mathf.Clamp01(_life / 0.6f);
+                _renderer.color = color;
+            }
+            if (_life <= 0f) Destroy(gameObject);
         }
     }
 }

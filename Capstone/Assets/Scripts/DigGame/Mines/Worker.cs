@@ -4,8 +4,8 @@ using UnityEngine;
 namespace DigGame
 {
     /// <summary>
-    /// 고용된 일꾼. 수거 일꾼은 지하 집하장에서 폐기물을 분류하고,
-    /// 운반 일꾼은 파놓은 통로를 따라 지상 분리수거장까지 옮긴다.
+    /// 고용된 일꾼. 자동 재활용 일꾼은 20초마다 단독으로 수거·판매하고,
+    /// 대량 운반 일꾼은 보관함을 파놓은 통로를 따라 지상 분리수거장까지 옮긴다.
     /// </summary>
     public class Worker : MonoBehaviour
     {
@@ -75,26 +75,28 @@ namespace DigGame
             else TickHauler();
         }
 
-        // ---------------- 채굴 일꾼 ----------------
+        // ---------------- 자동 수거·재활용 일꾼 ----------------
         void TickMiner()
         {
-            if (Mine.Reserve <= 0)
+            if (Mine.Reserve <= 0 && Mine.Stockpile.Count == 0)
             {
                 StatusText = "고갈";
                 return;
             }
-            if (Mine.StockpileFull)
-            {
-                StatusText = "적재 대기";
-                return;
-            }
 
-            StatusText = "폐기물 분류 중";
+            StatusText = Mine.Stockpile.Count > 0 ? "보관품 자동 재활용" : "폐기물 자동 회수";
             _extractTimer += Time.deltaTime;
             if (_extractTimer >= GameConfig.MinerExtractInterval)
             {
-                _extractTimer = 0f;
-                Mine.ExtractOne(_rng);
+                _extractTimer -= GameConfig.MinerExtractInterval;
+
+                // 보관품이 없으면 광산 매장량에서 새 고철을 하나 회수한다.
+                if (Mine.Stockpile.Count == 0 && !Mine.ExtractOne(_rng)) return;
+
+                // 수거 일꾼 단독으로도 지상 반입과 재활용까지 끝내 즉시 수익을 낸다.
+                var batch = Mine.TakeFromStockpile(1);
+                int paid = _game.RecycleAtFactory(batch, $"자동 수거 일꾼 · 도시광산 #{Mine.Id}");
+                Mine.RecordAutomaticSale(batch.Count, paid);
             }
         }
 
@@ -146,7 +148,10 @@ namespace DigGame
                     if (_stateTimer >= 0.4f)
                     {
                         _stateTimer = 0f;
-                        _game.DeliverToSurface(_carrying, $"운반 일꾼 (지하 수거장 #{Mine.Id})");
+                        // 광산 산출물과 플레이어가 맡긴 쓰레기를 지상 공장에서 정식 재활용한다.
+                        int itemCount = _carrying.Count;
+                        int paid = _game.RecycleAtFactory(_carrying, $"대량 운반 일꾼 · 도시광산 #{Mine.Id}");
+                        Mine.RecordAutomaticSale(itemCount, paid);
                         _carrying.Clear();
                         _path = null;
                         _state = HaulState.ToMine;

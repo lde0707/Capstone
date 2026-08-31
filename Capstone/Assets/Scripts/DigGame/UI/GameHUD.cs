@@ -9,6 +9,8 @@ namespace DigGame
     {
         const float MarginX = 28f;
         const float MarginY = 26f;
+        /// <summary>우측 상단 패널 높이. 아래에 붙는 패널들이 이 값을 기준으로 내려간다.</summary>
+        const float TopRightHeight = 178f;
         const float PanelW = 268f;
         const int HotbarSlotCount = 9;
         const float HotbarSlotSize = 56f;
@@ -240,7 +242,7 @@ namespace DigGame
         void DrawTopRight()
         {
             float w = 330f;
-            var r = new Rect(Screen.width - w - MarginX, MarginY, w, 122);
+            var r = new Rect(Screen.width - w - MarginX, MarginY, w, TopRightHeight);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             bool warn = _game.TimeLeft < GameConfig.DayEndWarnSeconds;
@@ -249,14 +251,13 @@ namespace DigGame
 
             GUI.Label(new Rect(x, y, iw, 24),
                 $"<b>{_game.Day}일차</b> / {GameConfig.DaysToWin}일", _title);
-            y += 28;
+            int secondsLeft = Mathf.CeilToInt(_game.TimeLeft);
+            string timeColor = warn ? "#ff8888" : "#f3dda0";
+            GUI.Label(new Rect(x + iw - 112, y + 2, 112, 22),
+                $"<color={timeColor}>남은 시간 {secondsLeft}초</color>", _small);
+            y += 30;
 
-            Fill(new Rect(x, y, iw, 18), new Color(1f, 1f, 1f, 0.13f));
-            Fill(new Rect(x, y, iw * _game.QuotaProgress01, 18),
-                _game.QuotaProgress01 >= 1f ? new Color32(88, 200, 130, 255) : new Color32(230, 160, 60, 255));
-            GUI.Label(new Rect(x + 6, y - 1, iw, 22),
-                $"오늘 할당량  {_game.DeliveredToday:N0} / {_game.Quota:N0}원", _small);
-            y += 26;
+            DrawQuotaGauge(x, ref y, iw);
 
             GUI.Label(new Rect(x, y, iw, 24), $"보유금  <b>{_game.Money:N0}</b>원", _title);
             y += 26;
@@ -264,9 +265,82 @@ namespace DigGame
             if (warn)
                 GUI.Label(new Rect(x, y, iw, 20),
                     "<color=#ff8888>마감 임박! 지하에 있으면 가방을 몰수당한다</color>", _small);
-            else if (_game.SellMultiplier > 1f)
+            else if (_game.AllQuotaStagesCleared)
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"분리수거장 가동 중 — 판매가 x{_game.SellMultiplier:0.0}", _small);
+                    $"<color=#9be89b>오늘 {GameConfig.MaxQuotaStages}단계 전부 달성! 보너스 +{_game.QuotaCompletionBonus:N0}원</color>", _small);
+            else if (_game.QuotaCleared > 0)
+                GUI.Label(new Rect(x, y, iw, 20),
+                    $"<color=#9be89b>{_game.QuotaCleared}단계 달성 · 다음 단계까지 {_game.QuotaRemaining:N0}원</color>", _small);
+            else
+                GUI.Label(new Rect(x, y, iw, 20),
+                    $"현재 부족 {_game.QuotaShortfall:N0}원 · 긴급 정산 {_game.QuotaShortfallPenalty:N0}원", _small);
+
+            // 지상 마을 — 오늘의 노동이 무엇으로 남는지 항상 보이게 한다
+            var village = _game.Village;
+            if (village != null)
+            {
+                y += 22;
+                GUI.Label(new Rect(x, y, iw, 20),
+                    $"<color=#bcd9f2>지상  <b>{village.StageName}</b> · 집 {village.HouseCount}채 · 주민 {village.Population}명</color>",
+                    _small);
+            }
+        }
+
+        /// <summary>
+        /// 오늘의 할당량 게이지. 칸 하나가 단계 하나이고,
+        /// 지금 도전 중인 칸만 실시간으로 차오른다. 넘긴 칸은 초록으로 굳는다.
+        /// </summary>
+        void DrawQuotaGauge(float x, ref float y, float iw)
+        {
+            const float BarH = 24f;
+            const float Gap = 3f;
+            int stages = Mathf.Max(1, GameConfig.MaxQuotaStages);
+            float segW = (iw - Gap * (stages - 1)) / stages;
+
+            var trackColor = new Color(1f, 1f, 1f, 0.10f);
+            var clearedColor = new Color32(88, 200, 130, 255);
+            var activeColor = new Color32(240, 172, 62, 255);
+
+            for (int i = 0; i < stages; i++)
+            {
+                var seg = new Rect(x + i * (segW + Gap), y, segW, BarH);
+                Fill(seg, trackColor);
+
+                bool isCleared = i < _game.QuotaCleared;
+                bool isActive = i == _game.QuotaCleared;
+
+                if (isCleared)
+                {
+                    Fill(seg, clearedColor);
+                }
+                else if (isActive)
+                {
+                    float p = Mathf.Clamp01(_game.QuotaProgress01);
+                    if (p > 0.001f)
+                        Fill(new Rect(seg.x, seg.y, seg.width * p, seg.height), activeColor);
+                    Outline(seg, new Color(1f, 1f, 1f, 0.65f));
+                }
+
+                string numColor = isCleared ? "#123322" : (isActive ? "#fff4d8" : "#8f8c86");
+                GUI.Label(new Rect(seg.x + segW * 0.5f - 7f, seg.y + 3f, 16f, 18f),
+                    $"<color={numColor}><b>{i + 1}</b></color>", _small);
+            }
+            y += BarH + 6f;
+
+            string amount = _game.AllQuotaStagesCleared
+                ? $"오늘 반입 <b>{_game.DeliveredToday:N0}</b>원 — 모든 단계 달성"
+                : $"할당량 <b>{_game.QuotaStage}단계</b>   {_game.DeliveredToday:N0} / <b>{_game.Quota:N0}</b>원";
+            GUI.Label(new Rect(x, y, iw, 22), amount, _label);
+            y += 24f;
+        }
+
+        /// <summary>사각형 테두리 1px.</summary>
+        void Outline(Rect r, Color c)
+        {
+            Fill(new Rect(r.x, r.y, r.width, 1f), c);
+            Fill(new Rect(r.x, r.y + r.height - 1f, r.width, 1f), c);
+            Fill(new Rect(r.x, r.y, 1f, r.height), c);
+            Fill(new Rect(r.x + r.width - 1f, r.y, 1f, r.height), c);
         }
 
         // ==================================================================
@@ -293,12 +367,33 @@ namespace DigGame
                 GUI.Label(new Rect(br.x + 12, br.y + 3, br.width - 24, 22), p.BlockedReason, _label);
             }
 
+            DigFeature feature = p.TargetDigFeature;
+            if (!_game.ShopOpen && feature != DigFeature.None)
+            {
+                Color featureColor = DigFeatureInfo.ColorOf(feature);
+                var fr = new Rect(Screen.width * 0.5f - 210, 64, 420, 34);
+                Fill(fr, new Color(featureColor.r * 0.25f, featureColor.g * 0.25f,
+                    featureColor.b * 0.25f, 0.92f));
+                GUI.Label(new Rect(fr.x + 12, fr.y + 6, fr.width - 24, 23),
+                    $"<b>{DigFeatureInfo.DisplayName(feature)}</b> — {DigFeatureInfo.Description(feature)}", _label);
+            }
+
+            int digSpeedBonus = p.TargetDigSpeedBonusPercent;
+            if (!_game.ShopOpen && digSpeedBonus > 0)
+            {
+                float y = feature != DigFeature.None ? 102f : 64f;
+                var sr = new Rect(Screen.width * 0.5f - 145, y, 290, 30);
+                Fill(sr, new Color(0.18f, 0.12f, 0.05f, 0.90f));
+                GUI.Label(new Rect(sr.x + 12, sr.y + 4, sr.width - 24, 22),
+                    $"<b>힘 우위</b> — 굴착 속도 +{digSpeedBonus}%", _label);
+            }
+
             if (!_game.ShopOpen && _game.PlayerNearRecycle())
             {
                 var hr = new Rect(Screen.width * 0.5f - 190, 26, 380, 30);
                 Fill(hr, new Color(0.06f, 0.22f, 0.10f, 0.88f));
                 string text = p.Inventory.Count > 0
-                    ? $"[E] 쓰레기 {p.Inventory.Count}개 버리기 · {p.InventoryValue:N0}원"
+                    ? $"[E] {p.Inventory.Count}개 재활용 · 예상 {_game.EstimateRecycledValue(p.Inventory):N0}원"
                     : "[E] 분리수거장 · 가방이 비어 있음";
                 GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
             }
@@ -314,20 +409,27 @@ namespace DigGame
             {
                 float w = 330f;
                 // 정보 표시일 뿐 버튼이 없으므로 클릭 차단 영역으로 등록하지 않는다.
-                var mr = new Rect(Screen.width - w - MarginX, MarginY + 134, w, 164);
+                var mr = new Rect(Screen.width - w - MarginX, MarginY + TopRightHeight + 8f, w, 224);
                 Fill(mr, new Color(0.13f, 0.11f, 0.03f, 0.86f));
 
                 float x = mr.x + 12, y = mr.y + 10, iw = mr.width - 24;
                 GUI.Label(new Rect(x, y, iw, 22), mine.Label, _label); y += 24;
                 GUI.Label(new Rect(x, y, iw, 20), $"남은 매장량  {mine.Reserve}", _label); y += 20;
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"분류 대기  {mine.Stockpile.Count} / {GameConfig.MineStockpileCap}", _label); y += 20;
+                    $"안전 보관  {mine.Stockpile.Count} / {GameConfig.MineStockpileCap}" +
+                    $" · 예상 { _game.EstimateRecycledValue(mine.Stockpile):N0}원", _label); y += 22;
+                string interact = p.Inventory.Count > 0
+                    ? $"[E] 가방 {p.Inventory.Count}개 안전 보관"
+                    : mine.Stockpile.Count > 0 ? "[E] 보관품 가방으로 회수" : "[E] 보관함 비어 있음";
+                GUI.Label(new Rect(x, y, iw, 20), interact, _small); y += 21;
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"일꾼  수거 {mine.Miners}명 · 운반 {mine.Haulers}명", _label); y += 24;
+                    $"일꾼  자동 재활용 {mine.Miners}명 · 대량 운반 {mine.Haulers}명", _label); y += 24;
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"[H] 수거 일꾼  {GameConfig.MinerHireCost:N0}원 (일당 {GameConfig.MinerWage})", _small); y += 19;
+                    $"오늘 자동 수익  {mine.AutoIncomeToday:N0}원 / {mine.AutoItemsToday}개", _label); y += 22;
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"[J] 운반 일꾼  {GameConfig.HaulerHireCost:N0}원 (일당 {GameConfig.HaulerWage})", _small);
+                    $"[H] 자동 재활용  {GameConfig.MinerHireCost:N0}원 · 20초마다 수익", _small); y += 19;
+                GUI.Label(new Rect(x, y, iw, 20),
+                    $"[J] 대량 운반  {GameConfig.HaulerHireCost:N0}원 · 보관함 5개씩", _small);
             }
         }
 
@@ -420,6 +522,16 @@ namespace DigGame
                     ly += 19;
                 }
                 y += rh + 8;
+            }
+
+            // 지상 마을 성장 요약
+            if (_game.Village != null)
+            {
+                GUI.Label(new Rect(x, y, iw, 22),
+                    $"지상 마을  <color=#9be89b><b>{_game.Village.StageName}</b></color>" +
+                    $" · 내 집 {Village.HouseName(_game.Village.HomeTier)}" +
+                    $" · 집 {_game.Village.HouseCount}채 · 주민 {_game.Village.Population}명", _label);
+                y += 28;
             }
 
             // 내일 예고
@@ -546,10 +658,10 @@ namespace DigGame
             int lv = _game.RecycleLevel;
 
             string desc = lv == 0
-                ? $"분류 설비를 가동하면 모든 판매가 x{GameConfig.RecycleBonus1:0.0}"
+                ? $"기본 재질 보너스 x1.25~x2.10 · 설비 가동 시 추가 x{GameConfig.RecycleBonus1:0.0}"
                 : lv == 1
-                    ? $"확장하면 판매가 x{GameConfig.RecycleBonus2:0.0} (현재 x{GameConfig.RecycleBonus1:0.0})"
-                    : $"판매가 x{GameConfig.RecycleBonus2:0.0} 적용 중";
+                    ? $"재질 보너스에 설비 x{GameConfig.RecycleBonus1:0.0} · 확장 시 x{GameConfig.RecycleBonus2:0.0}"
+                    : $"재질 보너스에 최고 설비 x{GameConfig.RecycleBonus2:0.0} 적용 중";
 
             int cost = lv == 0 ? GameConfig.RecycleStationCost : GameConfig.RecycleUpgradeCost;
 
@@ -582,7 +694,7 @@ namespace DigGame
         void DrawHelpPanel()
         {
             // 하단 인벤토리 핫바와 겹치지 않게 그 위에 배치한다.
-            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 306, 510, 184);
+            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 391, 510, 267);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             float y = r.y + 8;
@@ -596,6 +708,11 @@ namespace DigGame
                 "E — 왼쪽 분리수거장에 투입 / 오른쪽 처리장에서 강화",
                 "Q 탐지기 · B 귀환 벨 · F 드링크 (밤 상점에서 구입)",
                 "쓰레기는 지상 분리수거장 앞에서 E를 눌러야 판매된다",
+                "파랑: 푸석한 흙 · 금색: 고가품이 든 압축 폐기물층",
+                "연두: 매립 가스층 — 방호복이 있으면 피해를 막는다",
+                "힘이 땅의 요구치보다 높으면 단계마다 굴착 속도 +35%",
+                "초록 잔디 지반은 파괴 불가 · 스폰 오른쪽 2칸의 입구 이용",
+                "도시광산 E: 보관/회수 · H 20초 자동 재활용 · J 대량 운반",
                 "해가 지기 전에 꼭 지상으로! 지하에 있으면 가방을 몰수당한다",
                 "Shift+R — 새 게임"
             };

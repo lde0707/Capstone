@@ -13,7 +13,9 @@ namespace DigGame
         public readonly int Height;
 
         readonly TileKind[] _tiles;
+        readonly TileKind[] _dugFrom;
         readonly Dictionary<int, LootItem> _treasures = new Dictionary<int, LootItem>();
+        readonly Dictionary<int, DigFeature> _digFeatures = new Dictionary<int, DigFeature>();
         readonly Dictionary<int, MineSite> _mineSites = new Dictionary<int, MineSite>();
 
         public System.Action<int, int, TileKind> OnTileChanged;
@@ -24,6 +26,7 @@ namespace DigGame
             Width = width;
             Height = height;
             _tiles = new TileKind[width * height];
+            _dugFrom = new TileKind[width * height];
         }
 
         public bool InBounds(int x, int y) => x >= 0 && x < Width && y >= 0 && y < Height;
@@ -39,14 +42,37 @@ namespace DigGame
         public void SetRaw(int x, int y, TileKind kind)
         {
             if (!InBounds(x, y)) return;
-            _tiles[Index(x, y)] = kind;
+            int index = Index(x, y);
+            _tiles[index] = kind;
+            if (kind != TileKind.Empty) _dugFrom[index] = kind;
         }
 
         public void Set(int x, int y, TileKind kind)
         {
             if (!InBounds(x, y)) return;
-            _tiles[Index(x, y)] = kind;
+            int index = Index(x, y);
+            TileKind previous = _tiles[index];
+            if (kind == TileKind.Empty && TileInfo.SupportsPassage(previous))
+                _dugFrom[index] = previous;
+            else if (kind != TileKind.Empty)
+                _dugFrom[index] = kind;
+            _tiles[index] = kind;
             OnTileChanged?.Invoke(x, y, kind);
+        }
+
+        /// <summary>
+        /// 현재 칸을 파기 직전의 정확한 지층 종류. 굴착되지 않은 칸은 현재 종류를 반환한다.
+        /// 지층 경계가 x축 노이즈로 흔들리므로 깊이만으로 원래 종류를 추정하면 안 된다.
+        /// </summary>
+        public TileKind OriginalGroundAt(int x, int y)
+        {
+            if (!InBounds(x, y)) return TileKind.Bedrock;
+            int index = Index(x, y);
+            TileKind current = _tiles[index];
+            if (current != TileKind.Empty) return current;
+
+            TileKind original = _dugFrom[index];
+            return TileInfo.SupportsPassage(original) ? original : TileInfo.ForZone(ZoneAt(y));
         }
 
         public bool IsWalkable(int x, int y) => TileInfo.IsWalkable(Get(x, y));
@@ -83,6 +109,36 @@ namespace DigGame
             {
                 foreach (var kv in _treasures)
                     yield return (new Vector2Int(kv.Key % Width, kv.Key / Width), kv.Value);
+            }
+        }
+
+        // ---------- 특수 지층 ----------
+        public void PutDigFeature(int x, int y, DigFeature feature)
+        {
+            if (!InBounds(x, y)) return;
+            int index = Index(x, y);
+            if (feature == DigFeature.None) _digFeatures.Remove(index);
+            else _digFeatures[index] = feature;
+        }
+
+        public DigFeature DigFeatureAt(int x, int y)
+        {
+            if (!InBounds(x, y)) return DigFeature.None;
+            return _digFeatures.TryGetValue(Index(x, y), out var feature)
+                ? feature : DigFeature.None;
+        }
+
+        public void ClearDigFeature(int x, int y)
+        {
+            if (InBounds(x, y)) _digFeatures.Remove(Index(x, y));
+        }
+
+        public IEnumerable<(Vector2Int cell, DigFeature feature)> AllDigFeatures
+        {
+            get
+            {
+                foreach (var pair in _digFeatures)
+                    yield return (new Vector2Int(pair.Key % Width, pair.Key / Width), pair.Value);
             }
         }
 

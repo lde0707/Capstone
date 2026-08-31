@@ -29,6 +29,20 @@ namespace DigGame
 
         public Vector2Int HoverCell { get; private set; }
         public bool HoverValid { get; private set; }
+        public DigFeature TargetDigFeature => HoverValid && _grid != null
+            ? _grid.DigFeatureAt(HoverCell.x, HoverCell.y) : DigFeature.None;
+        public int TargetDigSpeedBonusPercent
+        {
+            get
+            {
+                if (!HoverValid || _grid == null || Stats == null) return 0;
+                TileKind kind = _grid.Get(HoverCell.x, HoverCell.y);
+                if (!TileInfo.IsDiggable(kind)) return 0;
+
+                float durationMultiplier = TileInfo.PowerDigDurationMultiplier(kind, Stats.Power);
+                return Mathf.Max(0, Mathf.RoundToInt((1f / durationMultiplier - 1f) * 100f));
+            }
+        }
 
         GameManager _game;
         WorldGrid _grid;
@@ -38,6 +52,10 @@ namespace DigGame
         float _digNeeded;
         float _blockedTimer;
         float _staminaTick;
+        float _visualTime;
+        Vector2 _moveInput;
+        PlayerVisualState _visualState;
+        Facing _facing = Facing.Down;
         Vector2Int _lastCell = new Vector2Int(int.MinValue, int.MinValue);
         Vector2Int _digDirection = new Vector2Int(0, 1);
 
@@ -94,9 +112,12 @@ namespace DigGame
             _lastCell = Cell;
 
             _sr = gameObject.AddComponent<SpriteRenderer>();
-            _sr.sprite = SpriteFactory.Framed(new Color32(245, 245, 250, 255), new Color32(210, 70, 70, 255));
+            var walkFrames = PlayerSpriteCatalog.Frames(PlayerVisualState.Walk, Facing.Down);
+            _sr.sprite = walkFrames.Length > 0
+                ? walkFrames[0]
+                : SpriteFactory.Framed(new Color32(245, 245, 250, 255), new Color32(210, 70, 70, 255));
             _sr.sortingOrder = WorldView.PlayerSortingOrder;
-            transform.localScale = Vector3.one * GameConfig.PlayerScale;
+            transform.localScale = Vector3.one * (GameConfig.PlayerScale * 1.18f);
 
             CancelDig();
         }
@@ -117,6 +138,7 @@ namespace DigGame
             TickSurvival(dt);
             UpdateDigAim();
             TickKeyboardDig(dt);
+            UpdateVisual(dt);
             PickUpNearby();
             TickGearKeys(dt);
         }
@@ -184,7 +206,7 @@ namespace DigGame
         void TickMovement(float dt)
         {
             var kb = Keyboard.current;
-            if (kb == null) return;
+            if (kb == null) { _moveInput = Vector2.zero; return; }
 
             float ix = 0f;
             if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) ix -= 1f;
@@ -192,6 +214,7 @@ namespace DigGame
             float iy = 0f;
             if (kb.wKey.isPressed || kb.upArrowKey.isPressed) iy += 1f;
             if (kb.sKey.isPressed || kb.downArrowKey.isPressed) iy -= 1f;
+            _moveInput = new Vector2(ix, iy);
 
             float speed = Stats.MoveSpeed * GameConfig.CellSize;
 
@@ -206,6 +229,53 @@ namespace DigGame
                 p.y = SurfaceStandY;
                 transform.position = p;
             }
+        }
+
+        void UpdateVisual(float dt)
+        {
+            if (_sr == null) return;
+
+            PlayerVisualState nextState = IsDigging ? PlayerVisualState.Dig : PlayerVisualState.Walk;
+            Facing nextFacing = _facing;
+
+            if (IsDigging)
+            {
+                // 그리드 y 는 아래로 증가한다.
+                if (_digDirection.x > 0) nextFacing = Facing.Right;
+                else if (_digDirection.x < 0) nextFacing = Facing.Left;
+                else if (_digDirection.y > 0) nextFacing = Facing.Down;
+                else nextFacing = Facing.Up;
+            }
+            else if (Mathf.Abs(_moveInput.x) > 0.01f)
+            {
+                nextFacing = _moveInput.x > 0f ? Facing.Right : Facing.Left;
+            }
+            else if (Mathf.Abs(_moveInput.y) > 0.01f)
+            {
+                nextFacing = _moveInput.y > 0f ? Facing.Up : Facing.Down;
+            }
+
+            if (nextState != _visualState || nextFacing != _facing)
+            {
+                _visualState = nextState;
+                _facing = nextFacing;
+                _visualTime = 0f;
+            }
+            else
+            {
+                _visualTime += dt;
+            }
+
+            Sprite[] frames = PlayerSpriteCatalog.Frames(_visualState, _facing);
+            if (frames.Length > 0)
+            {
+                bool active = IsDigging || _moveInput.sqrMagnitude > 0.01f;
+                float fps = _visualState == PlayerVisualState.Dig ? 11f : 8f;
+                int frame = active ? Mathf.FloorToInt(_visualTime * fps) % frames.Length : 0;
+                _sr.sprite = frames[frame];
+            }
+
+            _sr.flipX = PlayerSpriteCatalog.NeedsFlip(_facing);
         }
 
         void MoveAxisX(float dx)
@@ -308,24 +378,100 @@ namespace DigGame
         }
 
         // ---------------- WASD 조준 + Space 굴착 ----------------
+        static readonly Vector2Int AimLeft = new Vector2Int(-1, 0);
+        static readonly Vector2Int AimRight = new Vector2Int(1, 0);
+        static readonly Vector2Int AimDown = new Vector2Int(0, 1);   // 그리드 y 는 아래로 증가
+        static readonly Vector2Int AimUp = new Vector2Int(0, -1);
+
         void UpdateDigAim()
         {
             HoverValid = false;
             var kb = Keyboard.current;
             if (kb == null || _game.ShopOpen) return;
 
-            if (kb.aKey.wasPressedThisFrame || kb.leftArrowKey.wasPressedThisFrame)
-                _digDirection = new Vector2Int(-1, 0);
-            else if (kb.dKey.wasPressedThisFrame || kb.rightArrowKey.wasPressedThisFrame)
-                _digDirection = new Vector2Int(1, 0);
-            else if (kb.sKey.wasPressedThisFrame || kb.downArrowKey.wasPressedThisFrame)
-                _digDirection = new Vector2Int(0, 1);
-            else if (kb.wKey.wasPressedThisFrame || kb.upArrowKey.wasPressedThisFrame)
-                _digDirection = new Vector2Int(0, -1);
+            // 1) 이번 프레임에 새로 누른 방향이 최우선 — 즉시 조준을 틀 수 있다.
+            if (TryTappedDirection(kb, out Vector2Int tapped))
+            {
+                _digDirection = tapped;
+            }
+            // 2) 새로 누른 게 없으면 '지금 누르고 있는' 방향을 계속 따라간다.
+            //    이래야 Space 를 누른 채 이동해 새 땅에 닿아도 조준이 끊기지 않는다.
+            else if (TryHeldDirection(kb, out Vector2Int held))
+            {
+                _digDirection = held;
+            }
+
+            // 3) Space 를 누르고 있는데 조준한 칸이 이미 파낸 자리라면,
+            //    함께 누르고 있는 다른 방향 중 팔 수 있는 칸으로 조준을 옮긴다.
+            if (kb.spaceKey.isPressed && !CanDigCell(Cell + _digDirection)
+                && TryFindHeldDiggable(kb, out Vector2Int rescue))
+            {
+                _digDirection = rescue;
+            }
 
             HoverCell = Cell + _digDirection;
             if (!_grid.InBounds(HoverCell.x, HoverCell.y)) return;
             HoverValid = true;
+        }
+
+        /// <summary>이번 프레임에 새로 눌린 방향키.</summary>
+        bool TryTappedDirection(Keyboard kb, out Vector2Int direction)
+        {
+            if (kb.aKey.wasPressedThisFrame || kb.leftArrowKey.wasPressedThisFrame) direction = AimLeft;
+            else if (kb.dKey.wasPressedThisFrame || kb.rightArrowKey.wasPressedThisFrame) direction = AimRight;
+            else if (kb.sKey.wasPressedThisFrame || kb.downArrowKey.wasPressedThisFrame) direction = AimDown;
+            else if (kb.wKey.wasPressedThisFrame || kb.upArrowKey.wasPressedThisFrame) direction = AimUp;
+            else { direction = Vector2Int.zero; return false; }
+            return true;
+        }
+
+        /// <summary>
+        /// 지금 누르고 있는 방향키. 현재 조준 방향의 키를 아직 누르고 있으면 그대로 유지해서,
+        /// 여러 키를 같이 눌러도 조준이 덜덜 떨리지 않는다.
+        /// </summary>
+        bool TryHeldDirection(Keyboard kb, out Vector2Int direction)
+        {
+            bool left = kb.aKey.isPressed || kb.leftArrowKey.isPressed;
+            bool right = kb.dKey.isPressed || kb.rightArrowKey.isPressed;
+            bool down = kb.sKey.isPressed || kb.downArrowKey.isPressed;
+            bool up = kb.wKey.isPressed || kb.upArrowKey.isPressed;
+
+            if ((_digDirection == AimLeft && left) || (_digDirection == AimRight && right)
+                || (_digDirection == AimDown && down) || (_digDirection == AimUp && up))
+            {
+                direction = _digDirection;
+                return true;
+            }
+
+            if (left) direction = AimLeft;
+            else if (right) direction = AimRight;
+            else if (down) direction = AimDown;
+            else if (up) direction = AimUp;
+            else { direction = Vector2Int.zero; return false; }
+            return true;
+        }
+
+        /// <summary>누르고 있는 방향 중 실제로 팔 수 있는 칸을 찾는다.</summary>
+        bool TryFindHeldDiggable(Keyboard kb, out Vector2Int direction)
+        {
+            if ((kb.aKey.isPressed || kb.leftArrowKey.isPressed) && CanDigCell(Cell + AimLeft))
+                direction = AimLeft;
+            else if ((kb.dKey.isPressed || kb.rightArrowKey.isPressed) && CanDigCell(Cell + AimRight))
+                direction = AimRight;
+            else if ((kb.sKey.isPressed || kb.downArrowKey.isPressed) && CanDigCell(Cell + AimDown))
+                direction = AimDown;
+            else if ((kb.wKey.isPressed || kb.upArrowKey.isPressed) && CanDigCell(Cell + AimUp))
+                direction = AimUp;
+            else { direction = Vector2Int.zero; return false; }
+            return true;
+        }
+
+        /// <summary>지금 힘으로 팔 수 있는 칸인가.</summary>
+        bool CanDigCell(Vector2Int cell)
+        {
+            if (_grid == null || !_grid.InBounds(cell.x, cell.y)) return false;
+            TileKind kind = _grid.Get(cell.x, cell.y);
+            return TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= Stats.Power;
         }
 
         void TickKeyboardDig(float dt)
@@ -343,7 +489,10 @@ namespace DigGame
             if (!TileInfo.IsDiggable(kind))
             {
                 CancelDig();
-                if (kind == TileKind.Bedrock) SetBlocked("베드락은 팔 수 없다");
+                if (kind == TileKind.Grass)
+                    SetBlocked("잔디 지반은 팔 수 없다 — 지상 입구를 이용하자");
+                else if (kind == TileKind.Bedrock)
+                    SetBlocked("베드락은 팔 수 없다");
                 return;
             }
 
@@ -363,14 +512,22 @@ namespace DigGame
             }
 
             int hardness = TileInfo.Hardness(kind);
+            DigFeature feature = _grid.DigFeatureAt(target.x, target.y);
+            float featureDurationMultiplier = DigFeatureInfo.DurationMultiplier(feature);
+            float powerDurationMultiplier = TileInfo.PowerDigDurationMultiplier(kind, Stats.Power);
+            float durationMultiplier = featureDurationMultiplier * powerDurationMultiplier;
             if (DigTarget != target)
             {
                 DigTarget = target;
                 _digAccum = 0f;
-                _digNeeded = GameConfig.DigTimePerHardness * hardness;
+                _digNeeded = GameConfig.DigTimePerHardness * hardness * durationMultiplier;
             }
 
-            float cost = GameConfig.DigStaminaPerTile / GameConfig.DigTimePerHardness * dt;
+            // 힘은 시간만 단축한다. 한 칸을 완전히 팠을 때의 총 기력은 기존과 같게 유지한다.
+            float staminaRateMultiplier = DigFeatureInfo.StaminaMultiplier(feature)
+                / Mathf.Max(0.01f, durationMultiplier);
+            float cost = GameConfig.DigStaminaPerTile / GameConfig.DigTimePerHardness
+                * staminaRateMultiplier * dt;
 
             IsDigging = true;
             Stats.Stamina = Mathf.Max(0f, Stats.Stamina - cost);
@@ -382,6 +539,7 @@ namespace DigGame
 
         void CompleteDig(Vector2Int target)
         {
+            DigFeature feature = _grid.DigFeatureAt(target.x, target.y);
             CancelDig();
 
             // 먼저 땅을 제거해 묻혀 있던 1칸 쓰레기가 실제 오브젝트로 나타나게 한다.
@@ -391,7 +549,41 @@ namespace DigGame
             if (_grid.TryGetMineSite(target.x, target.y, out var site) && !site.Discovered)
                 _game.DiscoverMine(site);
 
+            ResolveDigFeature(target, feature);
+            _grid.ClearDigFeature(target.x, target.y);
+
             _game.NotifyPlayerMoved();
+        }
+
+        void ResolveDigFeature(Vector2Int target, DigFeature feature)
+        {
+            switch (feature)
+            {
+                case DigFeature.LooseSoil:
+                    _game.Log("푸석한 흙을 빠르게 통과했다 — 기력 소모 절반");
+                    break;
+
+                case DigFeature.CompactCache:
+                    if (_grid.TryPeekTreasure(target.x, target.y, out var cache))
+                        _game.Log($"압축 폐기물층 개봉! {cache.Name} ({cache.Value:N0}원)");
+                    else
+                        _game.Log("압축 폐기물층을 해체했다");
+                    break;
+
+                case DigFeature.GasPocket:
+                    if (Gear.HasHazmat)
+                    {
+                        _game.Log("방호복이 매립 가스를 차단했다 — 보존된 쓰레기 발견");
+                    }
+                    else
+                    {
+                        Stats.Health -= GameConfig.GasPocketHealthDamage;
+                        Stats.Stamina = Mathf.Max(0f, Stats.Stamina - GameConfig.GasPocketStaminaDamage);
+                        SetBlocked($"매립 가스 분출! 체력 -{GameConfig.GasPocketHealthDamage:0} · 기력 -{GameConfig.GasPocketStaminaDamage:0}");
+                        _game.Log("매립 가스에 노출됐다 — 방호복이 있으면 피해를 막을 수 있다");
+                    }
+                    break;
+            }
         }
 
         void CancelDig()
@@ -513,6 +705,14 @@ namespace DigGame
             var all = new List<LootItem>(Inventory);
             Inventory.Clear();
             return all;
+        }
+
+        /// <summary>지하 보관함에서 꺼낸 아이템을 현재 부피 그대로 가방에 넣는다.</summary>
+        public bool TryReceiveStoredItem(LootItem item)
+        {
+            if (InventoryVolume + item.Volume > BagCapacity) return false;
+            Inventory.Add(item);
+            return true;
         }
 
         /// <summary>플레이어가 있는 칸의 지하 분리수거장 (없으면 null).</summary>

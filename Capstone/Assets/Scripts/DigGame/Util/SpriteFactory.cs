@@ -143,6 +143,8 @@ namespace DigGame
         {
             TrashSpriteCatalog.Clear();
             EnvironmentSpriteCatalog.Clear();
+            PlayerSpriteCatalog.Clear();
+            VillageSpriteCatalog.Clear();
 
             foreach (var sp in _cache.Values)
             {
