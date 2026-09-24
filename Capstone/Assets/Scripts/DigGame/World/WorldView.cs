@@ -14,7 +14,9 @@ namespace DigGame
         const int OrderGround = 0;
         const int OrderTreasure = 30;  // 보물은 어둠에 가려진다 (직접 찾아야 함)
         const int OrderFog = 45;
-        const int OrderMine = 46;      // 발견한 지하 수거장과 고용한 일꾼은 어둠 위에 계속 보인다
+        const int OrderMine = 46;      // 지상 시설·고용한 일꾼은 어둠 위에 계속 보인다
+        /// <summary>지하 도시광산 그림. 어둠 속에서는 그냥 땅으로 보이도록 포그 아래에 둔다.</summary>
+        const int OrderMineArt = OrderTreasure - 4;
         const int OrderWorker = 47;
         const int OrderHighlight = 48;
         const int OrderPlayer = 50;
@@ -262,6 +264,9 @@ namespace DigGame
                 hideFlags = HideFlags.DontSave
             };
 
+            // 알파 1 — 어둠 속에서는 광맥 균열도, 묻힌 쓰레기 힌트도, 유물도 비치지 않는다.
+            _fogMaterial.SetColor("_FogColor", new Color(0.035f, 0.032f, 0.055f, 1f));
+
             _fogRenderer = go.AddComponent<SpriteRenderer>();
             _fogRenderer.sprite = SpriteFactory.Solid(Color.white);
             _fogRenderer.sharedMaterial = _fogMaterial;
@@ -459,14 +464,14 @@ namespace DigGame
                 backdrop.transform.position = WorldGrid.CellToWorld(cell.x, cell.y);
                 var bsr = backdrop.AddComponent<SpriteRenderer>();
                 bsr.sprite = EnvironmentSpriteCatalog.CaveBackdrop(cell.x * 31 + cell.y * 17 + site.Id);
-                bsr.sortingOrder = OrderMine;
+                bsr.sortingOrder = OrderMineArt;
             }
 
             Vector3 center = WorldGrid.RectCenterToWorld(site.Rect);
-            AddBinArt(go.transform, center, Mathf.Min(1.1f, 0.58f * site.Rect.width), OrderMine + 1,
+            AddBinArt(go.transform, center, Mathf.Min(1.1f, 0.58f * site.Rect.width), OrderMineArt + 1,
                 $"UndergroundBin#{site.Id}");
             AddRecycleSign(go.transform, center + Vector3.up * (0.30f * GameConfig.CellSize),
-                site.OreTier * 3 + site.Id, 0.48f, OrderMine + 2, $"RecycleSign#{site.Id}");
+                site.OreTier * 3 + site.Id, 0.48f, OrderMineArt + 2, $"RecycleSign#{site.Id}");
 
             _mineMarkers[site.Id] = go;
         }
@@ -479,70 +484,117 @@ namespace DigGame
                 sr.color = new Color(0.45f, 0.45f, 0.45f, 1f);
         }
 
-        /// <summary>지상 강화 건물.</summary>
-        public void ShowBuilding(RectInt rect)
+        // ---------------- 지상 시설 (시대에 따라 모습이 바뀐다) ----------------
+        GameObject _upgradeShop;
+        SpriteRenderer _dropoffRenderer;
+        SpriteRenderer _dropoffSign;
+        SpriteRenderer _shopSign;
+        int _villageEra;
+        Color _dropoffTint = Color.white;
+
+        /// <summary>건물 꼭대기 위에 고정으로 떠 있는 간판.</summary>
+        SpriteRenderer SpawnSign(Transform parent, Vector3 stand,
+            VillageSpriteCatalog.SignKind kind, int order, string name)
         {
-            var go = new GameObject("UpgradeShop");
-            go.transform.SetParent(_markerRoot, false);
-            go.transform.position = WorldGrid.RectCenterToWorld(rect);
-            go.transform.localScale = new Vector3(
-                rect.width * GameConfig.CellSize, rect.height * GameConfig.CellSize, 1f);
-
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.position = stand
+                + Vector3.up * (VillageSpriteCatalog.SignLift * GameConfig.CellSize);
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = SpriteFactory.Framed(new Color32(180, 130, 80, 255), new Color32(250, 225, 170, 255));
-            sr.sortingOrder = OrderMine;
-
-            // 지붕 느낌의 작은 표식
-            var roof = new GameObject("Sign");
-            roof.transform.SetParent(go.transform, false);
-            roof.transform.localPosition = new Vector3(0f, 0.28f, 0f);
-            roof.transform.localScale = new Vector3(0.4f, 0.22f, 1f);
-            var rsr = roof.AddComponent<SpriteRenderer>();
-            rsr.sprite = SpriteFactory.Solid(new Color32(255, 235, 150, 255));
-            rsr.sortingOrder = OrderTreasure;
+            sr.sprite = VillageSpriteCatalog.Sign(kind, _villageEra);
+            sr.sortingOrder = order;
+            return sr;
         }
 
-        /// <summary>분리수거장 건물.</summary>
+        /// <summary>지상 건물이 지표면 위에 발을 딛는 위치 (bottom-center).</summary>
+        static Vector3 SurfaceStand(RectInt rect) =>
+            new Vector3((rect.xMin + rect.width * 0.5f) * GameConfig.CellSize,
+                        -GameConfig.SurfaceRow * GameConfig.CellSize, 0f);
+
+        /// <summary>지상 강화소(처리장).</summary>
+        public void ShowBuilding(RectInt rect)
+        {
+            if (_upgradeShop != null) return;
+
+            _upgradeShop = new GameObject("UpgradeShop");
+            _upgradeShop.transform.SetParent(_markerRoot, false);
+            _upgradeShop.transform.position = SurfaceStand(rect);
+
+            var sr = _upgradeShop.AddComponent<SpriteRenderer>();
+            sr.sprite = VillageSpriteCatalog.EraShop(_villageEra);
+            sr.sortingOrder = OrderMine;
+
+            _shopSign = SpawnSign(_upgradeShop.transform, SurfaceStand(rect),
+                VillageSpriteCatalog.SignKind.Shop, OrderMine + 1, "ShopSign");
+        }
+
+        /// <summary>시대가 바뀌면 투입소·강화소도 그 시대 건물로 갈아끼운다.</summary>
+        public void ApplyVillageEra(int era)
+        {
+            _villageEra = era;
+
+            if (_upgradeShop != null)
+            {
+                var sr = _upgradeShop.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.sprite = VillageSpriteCatalog.EraShop(era);
+            }
+            if (_dropoffRenderer != null)
+                _dropoffRenderer.sprite = VillageSpriteCatalog.EraDropoff(era);
+
+            if (_shopSign != null)
+                _shopSign.sprite = VillageSpriteCatalog.Sign(VillageSpriteCatalog.SignKind.Shop, era);
+            if (_dropoffSign != null)
+                _dropoffSign.sprite = VillageSpriteCatalog.Sign(VillageSpriteCatalog.SignKind.Dropoff, era);
+        }
+
+        /// <summary>시대 도약 연출 — 지상 시설도 같이 하얗게 탄다.</summary>
+        public void FlashVillageBuildings(Color color)
+        {
+            if (_upgradeShop != null)
+            {
+                var sr = _upgradeShop.GetComponent<SpriteRenderer>();
+                if (sr != null) sr.color = color;
+            }
+            if (_dropoffRenderer != null)
+                _dropoffRenderer.color = new Color(
+                    color.r * _dropoffTint.r, color.g * _dropoffTint.g, color.b * _dropoffTint.b, 1f);
+            if (_shopSign != null) _shopSign.color = color;
+            if (_dropoffSign != null) _dropoffSign.color = color;
+        }
+
+        /// <summary>쓰레기 투입소(분리수거장).</summary>
         public void ShowRecycleStation(RectInt rect, int level = 0)
         {
             if (_surfaceRecycle == null)
             {
                 _surfaceRecycle = new GameObject("SurfaceTrashDropOff");
                 _surfaceRecycle.transform.SetParent(_markerRoot, false);
-                Vector3 center = WorldGrid.RectCenterToWorld(rect);
-                _surfaceRecycle.transform.position = center;
-                AddRecyclerFactoryArt(_surfaceRecycle.transform, center, rect, OrderMine, "SurfaceBin");
+                Vector3 stand = SurfaceStand(rect);
+                _surfaceRecycle.transform.position = stand;
+
+                var binGo = new GameObject("SurfaceBin");
+                binGo.transform.SetParent(_surfaceRecycle.transform, false);
+                binGo.transform.position = stand;
+                _dropoffRenderer = binGo.AddComponent<SpriteRenderer>();
+                _dropoffRenderer.sprite = VillageSpriteCatalog.EraDropoff(_villageEra);
+                _dropoffRenderer.sortingOrder = OrderMine;
+
+                _dropoffSign = SpawnSign(_surfaceRecycle.transform, stand,
+                    VillageSpriteCatalog.SignKind.Dropoff, OrderMine + 1, "DropoffSign");
+
+                // 분리수거장 업그레이드 단계를 간판 위 작은 배지로 보여 준다.
                 AddRecycleSign(_surfaceRecycle.transform,
-                    center + Vector3.up * (0.34f * GameConfig.CellSize), 3, 0.55f,
-                    OrderMine + 1, "SurfaceRecycleSign");
+                    stand + Vector3.up * (5.1f * GameConfig.CellSize), 3, 0.55f,
+                    OrderMine + 2, "SurfaceRecycleSign");
             }
 
-            var bin = _surfaceRecycle.transform.Find("SurfaceBin")?.GetComponent<SpriteRenderer>();
-            var sign = _surfaceRecycle.transform.Find("SurfaceRecycleSign")?.GetComponent<SpriteRenderer>();
-            if (bin != null)
-                bin.color = level > 0 ? new Color32(195, 255, 205, 255) : Color.white;
-            if (sign != null)
+            var badge = _surfaceRecycle.transform.Find("SurfaceRecycleSign")?.GetComponent<SpriteRenderer>();
+            _dropoffTint = level > 0 ? new Color(0.78f, 1f, 0.82f, 1f) : Color.white;
+            if (_dropoffRenderer != null) _dropoffRenderer.color = _dropoffTint;
+            if (badge != null)
             {
-                sign.sprite = EnvironmentSpriteCatalog.RecycleItem(level <= 0 ? 3 : level == 1 ? 7 : 11);
-                sign.color = Color.white;
-            }
-        }
-
-        void AddRecyclerFactoryArt(Transform parent, Vector3 worldPosition, RectInt rect,
-            int sortingOrder, string name)
-        {
-            var machine = new GameObject(name);
-            machine.transform.SetParent(parent, false);
-            machine.transform.position = worldPosition + Vector3.up * (0.32f * GameConfig.CellSize);
-            var sr = machine.AddComponent<SpriteRenderer>();
-            sr.sprite = EnvironmentSpriteCatalog.RecyclerFactory() ?? EnvironmentSpriteCatalog.SurfaceBin();
-            sr.sortingOrder = sortingOrder;
-
-            if (sr.sprite != null)
-            {
-                float targetWidth = rect.width * GameConfig.CellSize * 0.92f;
-                float scale = targetWidth / Mathf.Max(0.01f, sr.sprite.bounds.size.x);
-                machine.transform.localScale = Vector3.one * scale;
+                badge.sprite = EnvironmentSpriteCatalog.RecycleItem(level <= 0 ? 3 : level == 1 ? 7 : 11);
+                badge.color = Color.white;
             }
         }
 
@@ -558,7 +610,7 @@ namespace DigGame
                 var go = new GameObject($"RecycledOutput({material})");
                 go.transform.SetParent(_markerRoot, false);
                 go.transform.position = _surfaceRecycle.transform.position
-                    + new Vector3((index - centerOffset) * 0.34f, 1.65f, 0f) * GameConfig.CellSize;
+                    + new Vector3((index - centerOffset) * 0.34f, 4.2f, 0f) * GameConfig.CellSize;
                 go.transform.localScale = Vector3.one * 0.8f;
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sprite = EnvironmentSpriteCatalog.RecycledProduct(material);

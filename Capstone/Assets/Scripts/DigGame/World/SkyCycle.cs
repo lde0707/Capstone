@@ -11,6 +11,9 @@ namespace DigGame
     {
         const int BackgroundSortingOrder = -1000;
 
+        /// <summary>지금 밤에 얼마나 가까운지 (0 낮 ~ 1 한밤). 원경 배경이 같이 어두워진다.</summary>
+        public float NightAmount { get; private set; }
+
         Camera _camera;
         GameManager _game;
         GameObject _backdrop;
@@ -63,6 +66,14 @@ namespace DigGame
 
             float progress = 1f - Mathf.Clamp01(_game.TimeLeft / GameConfig.DayLengthSeconds);
             EvaluateSky(progress, out var top, out var bottom, out var sun, out float nightAmount);
+            NightAmount = nightAmount;
+
+            // 시대마다 하늘의 공기가 다르다. 밤에는 색조를 거의 지워 원래 밤하늘로 돌아간다.
+            int era = _game.Village != null ? _game.Village.Era : 0;
+            Color tint = Color.Lerp(VillageSpriteCatalog.EraSkyTint(era), Color.white, nightAmount * 0.75f);
+            top = Tinted(top, tint);
+            bottom = Tinted(bottom, tint);
+            sun = Tinted(sun, tint);
 
             float sunX = Mathf.Lerp(0.08f, 0.92f, progress);
             float sunY = 0.50f + Mathf.Sin(progress * Mathf.PI) * 0.38f;
@@ -78,6 +89,9 @@ namespace DigGame
             // 셰이더가 보이지 않는 상황에서도 빈 화면이 생기지 않게 같은 계열색으로 지운다.
             _camera.backgroundColor = bottom;
         }
+
+        static Color Tinted(Color c, Color tint) => new Color(
+            Mathf.Clamp01(c.r * tint.r), Mathf.Clamp01(c.g * tint.g), Mathf.Clamp01(c.b * tint.b), c.a);
 
         static void EvaluateSky(float progress, out Color top, out Color bottom,
             out Color sun, out float nightAmount)

@@ -662,7 +662,7 @@ namespace DigGame
         {
             if (AtSurface)
             {
-                // 기력은 지상에서만, 0.1초마다 5씩 회복
+                // 기력은 지상에서만, 0.1초마다 10씩 회복 (지상 회복 2배)
                 _staminaTick += dt;
                 while (_staminaTick >= GameConfig.StaminaTickInterval)
                 {

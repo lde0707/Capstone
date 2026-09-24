@@ -57,7 +57,7 @@ namespace DigGame
 
         // ---------- 기력 (지상에서만 회복) ----------
         public const float StaminaTickInterval = 0.1f;
-        public const float StaminaPerTick = 5f;
+        public const float StaminaPerTick = 10f;    // 지상 회복 속도 2배
 
         // ---------- 깊이 압박 ----------
         public const float DepthDamageStartDepth = Layer3Depth;
@@ -122,8 +122,11 @@ namespace DigGame
         // ---------- 지상 건물 ----------
         public const int BuildingWidth = 2;
         public const int BuildingHeight = 2;
-        public const int BuildingOffsetX = 4;       // 처리장(판매소) — 시작점 오른쪽
-        public const int RecycleOffsetX = -6;       // 분리수거장 — 시작점 왼쪽
+        // 지상 배치 — 건물 스프라이트는 3칸 폭이므로 입구(1칸)와 겹치지 않게 벌려 둔다.
+        //   투입소[-9.5~-6.5]  내 집[-4~-1]  스폰[-1]  입구[+2] (최대 확장 시 [0~+5])
+        //   강화소[+5.5~+8.5]  복원소[+11~+14]
+        public const int BuildingOffsetX = 6;       // 강화소(처리장) — 입구 오른쪽
+        public const int RecycleOffsetX = -9;       // 투입소(분리수거장) — 내 집 왼쪽
         public const int BuildingInteractRange = 2;
 
         // ---------- 장비 ----------
@@ -150,6 +153,21 @@ namespace DigGame
         public const int TurtleBagBonus = 6;
 
         // ---------- 분리수거장 ----------
+        // ---------- 시대 진행 (날짜별) ----------
+        /// <summary>1일차부터 7일차까지의 목표 시대. 원시 2일 + 미래 2일.</summary>
+        static readonly int[] EraByDay = { 0, 0, 1, 2, 3, 4, 4 };
+
+        /// <summary>그날 도달해야 할 시대 번호 (0 원시 ~ 4 미래).</summary>
+        public static int EraForDay(int day) =>
+            EraByDay[Mathf.Clamp(day - 1, 0, EraByDay.Length - 1)];
+
+        // ---------- 땅굴 입구 확장 (밤 상점 · 시설) ----------
+        /// <summary>확장 단계. 1단계마다 입구가 좌우로 한 칸씩 넓어진다.</summary>
+        public const int MaxEntranceWidenLevel = 2;
+        static readonly int[] EntranceWidenCosts = { 1200, 2800 };
+        public static int EntranceWidenCost(int level) =>
+            EntranceWidenCosts[Mathf.Clamp(level, 0, EntranceWidenCosts.Length - 1)];
+
         public const int RecycleStationCost = 1200;
         public const float RecycleBonus1 = 1.3f;    // 설치 시 판매 보너스
         public const int RecycleUpgradeCost = 2000;

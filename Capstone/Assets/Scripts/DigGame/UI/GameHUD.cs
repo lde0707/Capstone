@@ -281,7 +281,8 @@ namespace DigGame
             {
                 y += 22;
                 GUI.Label(new Rect(x, y, iw, 20),
-                    $"<color=#bcd9f2>지상  <b>{village.StageName}</b> · 집 {village.HouseCount}채 · 주민 {village.Population}명</color>",
+                    $"<color=#bcd9f2>지상  <b>{village.EraName} 시대</b> · {village.StageName}" +
+                    $" · 집 {village.HouseCount}채 · 주민 {village.Population}명</color>",
                     _small);
             }
         }
@@ -528,8 +529,9 @@ namespace DigGame
             if (_game.Village != null)
             {
                 GUI.Label(new Rect(x, y, iw, 22),
-                    $"지상 마을  <color=#9be89b><b>{_game.Village.StageName}</b></color>" +
-                    $" · 내 집 {Village.HouseName(_game.Village.HomeTier)}" +
+                    $"지상 마을  <color=#9be89b><b>{_game.Village.EraName} 시대</b></color>" +
+                    $" · {_game.Village.StageName}" +
+                    $" · 내 집 {Village.HouseName(_game.Village.Era)}" +
                     $" · 집 {_game.Village.HouseCount}채 · 주민 {_game.Village.Population}명", _label);
                 y += 28;
             }
@@ -538,7 +540,19 @@ namespace DigGame
             int nextQuota = GameConfig.QuotaForDay(_game.Day + 1);
             GUI.Label(new Rect(x, y, iw, 22),
                 $"내일({_game.Day + 1}일차) 할당량  <color=#ffd166><b>{nextQuota:N0}원</b></color>", _label);
-            y += 30;
+            y += 26;
+
+            // 내일 시대가 넘어가는지 미리 알려 준다
+            if (_game.Village != null)
+            {
+                int nextEra = GameConfig.EraForDay(_game.Day + 1);
+                GUI.Label(new Rect(x, y, iw, 22),
+                    nextEra > _game.Village.Era
+                        ? $"내일 첫 할당량을 채우면  <color=#8ce0ff><b>{VillageSpriteCatalog.EraName(nextEra)} 시대</b></color>로 도약한다"
+                        : $"내일도 <color=#bcd9f2>{_game.Village.EraName} 시대</color> — 마을이 옆으로 더 넓어진다",
+                    _small);
+            }
+            y += 26;
 
             // 탭
             string[] tabs = { "능력치", "장비", "펫", "시설" };
@@ -668,6 +682,19 @@ namespace DigGame
             ShopRow(x, ref y, w, $"분리수거장 Lv.{lv}", desc,
                 lv >= 2 ? null : $"{cost:N0}원",
                 _game.Money >= cost, () => _game.TryBuyRecycleStation());
+
+            // 땅굴 입구 확장
+            int ewl = _game.EntranceWidenLevel;
+            bool ewMax = ewl >= GameConfig.MaxEntranceWidenLevel;
+            int ewCost = GameConfig.EntranceWidenCost(ewl);
+            string ewDesc = ewMax
+                ? $"입구 폭 {_game.EntranceWidth}칸 — 더 넓힐 수 없다"
+                : $"현재 폭 {_game.EntranceWidth}칸 → {_game.EntranceWidth + 2}칸. "
+                  + "좌우로 한 칸씩 뚫어 오르내리기가 빨라진다";
+
+            ShopRow(x, ref y, w, $"땅굴 입구 확장 Lv.{ewl}", ewDesc,
+                ewMax ? null : $"{ewCost:N0}원",
+                _game.Money >= ewCost, () => _game.TryBuyEntranceWiden());
 
             y += 6;
             GUI.Label(new Rect(x + 4, y, w, 20),

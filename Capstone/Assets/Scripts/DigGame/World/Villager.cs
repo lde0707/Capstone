@@ -10,20 +10,32 @@ namespace DigGame
     {
         const float WalkSpeed = 1.15f;
         const float FramesPerSecond = 7f;
+        /// <summary>발끝이 몸 중심에서 앞으로 나가는 거리 — 이만큼 앞이 구덩이면 돌아선다.</summary>
+        static float FootReach => GameConfig.CellSize * 0.55f;
 
         Village _village;
         SpriteRenderer _sr;
         Sprite[] _frames;
+        int _kind;
+        int _era;
 
         float _dir = 1f;
         float _stateTimer;
         bool _walking = true;
         float _animTime;
 
-        public void Init(Village village, int kind, Vector3 groundPosition)
+        /// <summary>이 주민이 어느 시대 옷을 입고 있는지.</summary>
+        public int Era => _era;
+        /// <summary>주민 종류 (시대 안에서의 번호).</summary>
+        public int Kind => _kind;
+        public string DisplayName => VillageSpriteCatalog.EraVillagerName(_era, _kind);
+
+        public void Init(Village village, int kind, int era, Vector3 groundPosition)
         {
             _village = village;
-            _frames = VillageSpriteCatalog.Villager(kind);
+            _kind = kind;
+            _era = era;
+            _frames = VillageSpriteCatalog.EraVillager(era, kind);
 
             transform.position = new Vector3(
                 groundPosition.x,
@@ -57,12 +69,24 @@ namespace DigGame
             {
                 _village.WanderRange(out float minX, out float maxX);
                 var p = transform.position;
-                p.x += _dir * WalkSpeed * dt;
+                float nextX = p.x + _dir * WalkSpeed * dt;
 
-                if (p.x < minX) { p.x = minX; _dir = 1f; }
-                else if (p.x > maxX) { p.x = maxX; _dir = -1f; }
+                if (nextX < minX) { nextX = minX; _dir = 1f; }
+                else if (nextX > maxX) { nextX = maxX; _dir = -1f; }
 
-                transform.position = p;
+                // 지하 입구나 플레이어가 판 구덩이 앞에서는 돌아선다.
+                float toe = nextX + _dir * FootReach;
+                if (!_village.CanWalkTo(toe))
+                {
+                    _dir = -_dir;
+                    _stateTimer = Random.Range(0.6f, 1.8f);
+                }
+                else
+                {
+                    p.x = nextX;
+                    transform.position = p;
+                }
+
                 _animTime += dt;
                 _sr.sprite = _frames[Mathf.FloorToInt(_animTime * FramesPerSecond) % _frames.Length];
                 _sr.flipX = _dir < 0f;
@@ -71,6 +95,21 @@ namespace DigGame
             {
                 _sr.sprite = _frames[0];
             }
+        }
+
+        /// <summary>시대가 바뀌면 주민도 그 시대 옷으로 갈아입는다.</summary>
+        public void SetEra(int era)
+        {
+            if (era == _era) return;
+            _era = era;
+            _frames = VillageSpriteCatalog.EraVillager(_era, _kind);
+            if (_sr != null && _frames.Length > 0) _sr.sprite = _frames[0];
+        }
+
+        /// <summary>시대 도약 연출 — 잠깐 하얗게 탄다.</summary>
+        public void Flash(Color color)
+        {
+            if (_sr != null) _sr.color = color;
         }
     }
 }

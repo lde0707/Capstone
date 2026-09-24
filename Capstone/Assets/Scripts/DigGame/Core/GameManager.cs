@@ -112,7 +112,8 @@ namespace DigGame
             Grid = WorldGenerator.Generate(seed);
 
             int cx = Grid.Width / 2;
-            SurfaceDropCell = new Vector2Int(cx, GameConfig.SurfaceRow - 1);
+            // 입구가 최대로 넓어져도(중심 +2 에서 좌우 2칸) 파이지 않는 칸에서 시작한다.
+            SurfaceDropCell = new Vector2Int(cx - 1, GameConfig.SurfaceRow - 1);
 
             BuildingRect = new RectInt(
                 cx + GameConfig.BuildingOffsetX,
@@ -188,8 +189,15 @@ namespace DigGame
             var follow = cam.gameObject.AddComponent<CameraFollow>();
             follow.Setup(target, Grid);
 
+            var oldBackdrop = cam.GetComponent<ParallaxBackdrop>();
+            if (oldBackdrop != null) Destroy(oldBackdrop);
+
             var sky = cam.gameObject.AddComponent<SkyCycle>();
             sky.Setup(cam, this);
+
+            // 하늘과 땅 사이의 원경 — 시대마다 통째로 갈린다.
+            var backdrop = cam.gameObject.AddComponent<ParallaxBackdrop>();
+            backdrop.Setup(cam, this);
         }
 
         // ==================================================================
@@ -777,6 +785,51 @@ namespace DigGame
             go.transform.SetParent(transform, false);
             _petObj = go.AddComponent<PetCompanion>();
             _petObj.Init(this, kind);
+        }
+
+        /// <summary>땅굴 입구 확장 단계 (0 = 1칸).</summary>
+        public int EntranceWidenLevel { get; private set; }
+
+        /// <summary>현재 땅굴 입구의 폭 (칸).</summary>
+        public int EntranceWidth => 1 + EntranceWidenLevel * 2;
+
+        /// <summary>땅굴 입구를 좌우 한 칸씩 넓힌다. 잔디층을 관통해 파낸다.</summary>
+        public bool TryBuyEntranceWiden()
+        {
+            if (EntranceWidenLevel >= GameConfig.MaxEntranceWidenLevel)
+            {
+                Log("땅굴 입구는 이미 최대 폭이다");
+                return false;
+            }
+
+            int cost = GameConfig.EntranceWidenCost(EntranceWidenLevel);
+            if (!TrySpend(cost, "땅굴 입구 확장")) return false;
+
+            EntranceWidenLevel++;
+            int center = WorldGenerator.SurfaceEntranceX(Grid);
+            var unearthed = new List<LootItem>();
+
+            for (int side = -1; side <= 1; side += 2)
+            {
+                int x = center + side * EntranceWidenLevel;
+                for (int y = GameConfig.SurfaceRow;
+                     y < GameConfig.SurfaceRow + GameConfig.GrassLayerRows;
+                     y++)
+                {
+                    if (!Grid.InBounds(x, y)) continue;
+                    if (Grid.TryTakeTreasure(x, y, out var item)) unearthed.Add(item);
+                    if (TileInfo.IsWalkable(Grid.Get(x, y))) continue;
+                    Grid.Set(x, y, TileKind.Empty);
+                }
+            }
+
+            Log($"땅굴 입구 확장! 좌우 한 칸씩 넓어져 폭 {EntranceWidth}칸이 되었다");
+            if (unearthed.Count > 0)
+            {
+                int paid = RecycleAtFactory(unearthed, "입구 확장 공사");
+                Log($"공사 중에 나온 쓰레기 {unearthed.Count}개도 같이 처분했다 (+{paid:N0}원)");
+            }
+            return true;
         }
 
         public bool TryBuyRecycleStation()

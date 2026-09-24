@@ -64,8 +64,8 @@ namespace DigGame
         public int CostOf(StatKind k)
         {
             int lv = LevelOf(k);
-            // 힘은 핵심 능력치라 조금 더 비싸다.
-            float mult = k == StatKind.Power ? 1.6f : 1f;
+            // 힘은 핵심 능력치라 훨씬 비싸다. (1.6 -> 2.4, 기존 대비 +50%)
+            float mult = k == StatKind.Power ? 2.4f : 1f;
             return Mathf.RoundToInt(GameConfig.UpgradeBaseCost * mult *
                                     Mathf.Pow(GameConfig.UpgradeCostGrowth, lv));
         }
