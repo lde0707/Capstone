@@ -25,7 +25,6 @@ namespace DigGame
         static readonly Dictionary<MaterialKind, Sprite> RecycledProducts = new Dictionary<MaterialKind, Sprite>();
 
         static Sprite _surfaceBin;
-        static Sprite _recyclerFactory;
 
         public static Sprite GroundFill(int pattern) => GroundFill(TileKind.SoftDirt, pattern);
 
@@ -233,16 +232,6 @@ namespace DigGame
             return Vector2.Distance(point, start + segment * t);
         }
 
-        public static Sprite RecyclerFactory()
-        {
-            if (_recyclerFactory != null) return _recyclerFactory;
-            var texture = LoadPixelTexture("Factory/recycler_factory");
-            if (texture == null) return null;
-            _recyclerFactory = MakeSprite(texture, new Rect(0f, 0f, texture.width, texture.height), 32f,
-                "Pixel Recycling Factory");
-            return _recyclerFactory;
-        }
-
         public static Sprite RecycledProduct(MaterialKind material)
         {
             if (RecycledProducts.TryGetValue(material, out var cached)) return cached;
@@ -347,7 +336,6 @@ namespace DigGame
             foreach (var texture in GroundAtlases.Values) DestroyGenerated(texture);
             foreach (var texture in PassageAtlases.Values) DestroyGenerated(texture);
             DestroyGenerated(_surfaceBin);
-            DestroyGenerated(_recyclerFactory);
 
             GroundFills.Clear();
             Passages.Clear();
@@ -357,7 +345,6 @@ namespace DigGame
             RecycleItems.Clear();
             RecycledProducts.Clear();
             _surfaceBin = null;
-            _recyclerFactory = null;
         }
 
         static void DestroyGenerated(Object obj)

@@ -58,18 +58,7 @@ namespace DigGame
 
         public bool Contains(Vector2Int c) => Rect.Contains(c);
 
-        public bool IsDepleted => Reserve <= 0 && Stockpile.Count == 0;
         public bool StockpileFull => Stockpile.Count >= GameConfig.MineStockpileCap;
-
-        public int StockpileRawValue
-        {
-            get
-            {
-                int total = 0;
-                for (int i = 0; i < Stockpile.Count; i++) total += Stockpile[i].Value;
-                return total;
-            }
-        }
 
         public string Label => $"#{Id} {ZoneInfo.DisplayName(Zone)} · {LootTable.OreName(OreTier)} 도시광산 ({Rect.width}x{Rect.height})";
 

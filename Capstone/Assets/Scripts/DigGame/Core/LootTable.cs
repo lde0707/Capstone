@@ -212,6 +212,5 @@ namespace DigGame
         }
 
         public static string OreName(int tier) => OreNames[Mathf.Clamp(tier, 0, OreNames.Length - 1)];
-        public static Color OreColor(int tier) => OreColors[Mathf.Clamp(tier, 0, OreColors.Length - 1)];
     }
 }

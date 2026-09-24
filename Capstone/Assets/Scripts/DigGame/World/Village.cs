@@ -108,22 +108,16 @@ namespace DigGame
 
         /// <summary>현재 시대 (0 원시 ~ 4 미래).</summary>
         public int Era => _era;
-        /// <summary>HUD 호환용 별칭.</summary>
-        public int HomeTier => _era;
         public string EraName => VillageSpriteCatalog.EraName(_era);
 
         /// <summary>이 시대에 사는 사람들 이름을 나열한다.</summary>
         public string VillagerLineup =>
             string.Join(", ", VillageSpriteCatalog.EraVillagerNames[
                 VillageSpriteCatalog.ClampEra(_era)]);
-        public bool IsFinalEra => _era >= VillageSpriteCatalog.EraCount - 1;
         public int HouseCount => _houses.Count + 1;
         public int Population => _villagers.Count;
         /// <summary>마을에 나와 있는 복원 유물 수.</summary>
         public int RelicCount => _relicUnits.Count;
-        public int WanderingRelicCount => _wanderingRelics;
-        /// <summary>세트 보너스로 들어선 랜드마크 수.</summary>
-        public int LandmarkCount => _landmarks.Count;
 
         /// <summary>공룡 공원이 생기면 더 많은 유물이 동시에 돌아다닐 수 있다.</summary>
         int MaxWandering => GameConfig.MaxWanderingRelics

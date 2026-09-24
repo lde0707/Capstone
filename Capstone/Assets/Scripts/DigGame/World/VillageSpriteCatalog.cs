@@ -7,25 +7,8 @@ namespace DigGame
     public static class VillageSpriteCatalog
     {
         const string VillageRoot = "PixelRefresh/Village/";
-        const string NpcRoot = "PixelRefresh/NPC/";
 
-        public const int HouseTiers = 6;
-        public const int HousePixels = 48;      // 3칸
-        public const int PropPixels = 32;       // 2칸
         public const int TilePixels = 16;       // 1칸
-
-        /// <summary>props 시트 인덱스.</summary>
-        public enum Prop
-        {
-            TreeBig = 0, TreeSmall = 1, Bush = 2, LampPost = 3, Fence = 4,
-            Well = 5, Crates = 6, Sign = 7, FlowerBed = 8, WaterTower = 9, Bench = 10
-        }
-
-        public static readonly string[] VillagerNames =
-        {
-            "villager_a", "villager_b", "villager_c",
-            "villager_d", "villager_e", "villager_kid"
-        };
 
         // ==================================================================
         // 시대 발전 — 마을은 5개 시대를 거치며 통째로 모습이 바뀐다.
@@ -72,7 +55,6 @@ namespace DigGame
 
         // ---------------- 시대별 배경 ----------------------------------------
         public const int BackdropWidth = 256;
-        public const int BackdropHeight = 64;
 
         /// <summary>하늘 색에 곱할 시대 색조. 세상 전체의 공기를 바꾼다.</summary>
         static readonly Color[] SkyTints =
@@ -120,9 +102,6 @@ namespace DigGame
         public const int PropKinds = 10;
         public const int EraPropPixels = 32;        // 2칸
 
-        public static readonly string[] BuildingKindNames =
-        { "작은 집", "보통 집", "넓은 건물", "높은 건물", "특수 건물 A", "특수 건물 B", "특수 건물 C" };
-
         /// <summary>그 시대의 이웃 건물. kind 마다 크기가 다르다.</summary>
         public static Sprite EraBuilding(int era, int kind)
         {
@@ -144,7 +123,6 @@ namespace DigGame
         /// 순서는 <c>RelicGroup</c> 과 같다.
         /// </summary>
         public const int LandmarkWidth = 96;        // 6칸
-        public const int LandmarkHeight = 80;       // 5칸
 
         public static readonly string[] SetLandmarkNames =
         { "공룡 공원", "요괴 마을", "세계 기담관", "국립 박물관", "추억의 거리", "미확인 구역" };
@@ -172,7 +150,6 @@ namespace DigGame
         public enum SignKind { Dropoff = 0, Shop = 1, Restorer = 2 }
 
         public const int SignWidth = 64;        // 4칸
-        public const int SignHeight = 26;
         public const int SignStyles = 3;        // 나무 / 함석 / 홀로
 
         /// <summary>간판이 건물 꼭대기 위로 뜨는 높이 (칸).</summary>
@@ -193,15 +170,6 @@ namespace DigGame
         }
 
         // ---------------- 시대별 지상 시설 ----------------------------------
-        public static readonly string[] EraDropoffNames =
-        { "돌 구덩이", "짚 광주리", "곳간", "고물상", "분해 포털" };
-
-        public static readonly string[] EraShopNames =
-        { "숫돌 터", "대장간", "저잣거리 좌판", "철공소", "강화 포드" };
-
-        public static string EraDropoffName(int era) => EraDropoffNames[ClampEra(era)];
-        public static string EraShopName(int era) => EraShopNames[ClampEra(era)];
-
         /// <summary>그 시대의 쓰레기 투입소(분리수거장).</summary>
         public static Sprite EraDropoff(int era) =>
             Slice(EraRoot + "era_dropoffs", EraPixels, EraCount, BottomPivot)[ClampEra(era)];
@@ -256,27 +224,11 @@ namespace DigGame
         /// <summary>16px = 한 칸이 되도록 하는 픽셀 밀도.</summary>
         public static float PixelsPerUnit => TilePixels / GameConfig.CellSize;
 
-        // ------------------------------------------------------------------
-        public static Sprite House(int tier) =>
-            Slice(VillageRoot + "houses", HousePixels, HouseTiers, BottomPivot)[
-                Mathf.Clamp(tier, 0, HouseTiers - 1)];
-
-        public static Sprite PropSprite(Prop prop) =>
-            Slice(VillageRoot + "props", PropPixels, 11, BottomPivot)[(int)prop];
-
         public static Sprite Road(int variant) =>
             Slice(VillageRoot + "roads", TilePixels, 6, CenterPivot)[Mathf.Abs(variant) % 6];
 
         public static Sprite Grass(int variant) =>
             Slice(VillageRoot + "grass", TilePixels, 4, CenterPivot)[Mathf.Abs(variant) % 4];
-
-        /// <summary>주민 걷기 4프레임 (오른쪽 보기).</summary>
-        public static Sprite[] Villager(int kind)
-        {
-            string name = VillagerNames[Mathf.Abs(kind) % VillagerNames.Length];
-            // 주민은 플레이어와 같은 크기 기준(ppu 16)을 쓴다.
-            return Slice(NpcRoot + name, TilePixels, 4, CenterPivot, TilePixels);
-        }
 
         static readonly Vector2 BottomPivot = new Vector2(0.5f, 0f);
         static readonly Vector2 CenterPivot = new Vector2(0.5f, 0.5f);

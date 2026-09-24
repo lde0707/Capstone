@@ -60,7 +60,6 @@ namespace DigGame
         Vector2Int _digDirection = new Vector2Int(0, 1);
 
         /// <summary>무중력 이동이므로 낙하 상태는 항상 꺼져 있다.</summary>
-        public bool IsFalling => false;
 
         /// <summary>지면 위에 서 있을 때의 중심 y. 이보다 위로는 올라갈 수 없다.</summary>
         static float SurfaceStandY => -GameConfig.SurfaceRow * GameConfig.CellSize + HalfSize;

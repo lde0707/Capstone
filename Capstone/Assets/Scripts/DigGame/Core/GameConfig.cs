@@ -41,7 +41,6 @@ namespace DigGame
         public const int VisionFadeRadius = 3;
 
         // ---------- 굴착 ----------
-        public const int DigRange = 1;
         public const float DigTimePerHardness = 0.34f;
         public const float DigStaminaPerTile = 3.25f; // 기존 대비 50% 감소
         /// <summary>땅의 요구 힘을 초과한 힘 1당 추가되는 굴착 속도.</summary>

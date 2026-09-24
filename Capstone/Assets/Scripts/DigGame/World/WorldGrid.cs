@@ -150,9 +150,6 @@ namespace DigGame
             }
         }
 
-        /// <summary>아직 땅에 남아 있는 유물 수.</summary>
-        public int BuriedRelicCount => _relics.Count;
-
         // ---------- 특수 지층 ----------
         public void PutDigFeature(int x, int y, DigFeature feature)
         {
@@ -214,8 +211,6 @@ namespace DigGame
         public void PutMineSite(int x, int y, MineSite site) => _mineSites[Index(x, y)] = site;
 
         public bool TryGetMineSite(int x, int y, out MineSite site) => _mineSites.TryGetValue(Index(x, y), out site);
-
-        public IEnumerable<MineSite> AllMineSites => _mineSites.Values;
 
         // ---------- 좌표 변환 ----------
         public static Vector3 GridToWorld(float x, float y) =>

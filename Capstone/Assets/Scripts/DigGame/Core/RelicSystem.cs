@@ -26,8 +26,6 @@ namespace DigGame
         bool[] _found;      // 땅에서 한 번이라도 캔 적 있는가
         bool[] _restored;   // 복원까지 마쳤는가
 
-        /// <summary>등에 지고 있는 유물 번호들.</summary>
-        public IReadOnlyList<int> Carried => _carried;
         public int CarriedCount => _carried.Count;
         public bool CarryFull => _carried.Count >= GameConfig.RelicCarryLimit;
 

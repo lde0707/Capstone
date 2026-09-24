@@ -33,8 +33,6 @@ namespace DigGame
         public bool Flying;             // 배회형이 공중에 뜨는가
 
         public string GroupName => RelicCatalog.GroupName(Group);
-        /// <summary>도감에 보이는 번호 (1부터).</summary>
-        public int Number => Id + 1;
 
         /// <summary>중복 발굴했을 때 자동 환전되는 금액.</summary>
         public int DuplicateValue => RelicCatalog.DepthValue(Depth);
@@ -69,7 +67,6 @@ namespace DigGame
         static readonly List<RelicDef>[] _byGroup = new List<RelicDef>[GroupCount];
         static readonly List<RelicDef>[] _byDepth = new List<RelicDef>[5];
 
-        public static IReadOnlyList<RelicDef> All => _all;
         public static int Count => _all.Count;
 
         public static RelicDef Get(int id) =>

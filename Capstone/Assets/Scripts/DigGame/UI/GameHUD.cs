@@ -26,27 +26,14 @@ namespace DigGame
         bool _showCodex;
         int _codexTab;   // 유물 도감 분류 탭
 
-        readonly List<Rect> _blockers = new List<Rect>();
-
         public void Init(GameManager game)
         {
             _game = game;
             if (game != null) game.Hud = this;
         }
 
-        public bool BlocksPointer(Vector2 screenPos)
-        {
-            var p = new Vector2(screenPos.x, Screen.height - screenPos.y);
-            for (int i = 0; i < _blockers.Count; i++)
-                if (_blockers[i].Contains(p)) return true;
-            return false;
-        }
-
-        void Panel(Rect r, Color c)
-        {
-            Fill(r, c);
-            _blockers.Add(r);
-        }
+        /// <summary>패널 배경. 반투명 사각형 한 장.</summary>
+        void Panel(Rect r, Color c) => Fill(r, c);
 
         void Awake()
         {
@@ -156,8 +143,6 @@ namespace DigGame
         {
             if (_game == null || _game.Grid == null) return;
             EnsureStyles();
-
-            if (Event.current.type == EventType.Layout) _blockers.Clear();
 
             switch (_game.State)
             {
@@ -290,7 +275,8 @@ namespace DigGame
                 y += 22;
                 GUI.Label(new Rect(x, y, iw, 20),
                     $"<color=#bcd9f2>지상  <b>{village.EraName} 시대</b> · {village.StageName}" +
-                    $" · 집 {village.HouseCount}채 · 주민 {village.Population}명</color>",
+                    $" · 집 {village.HouseCount}채 · 주민 {village.Population}명" +
+                    (village.RelicCount > 0 ? $" · 유물 {village.RelicCount}" : "") + "</color>",
                     _small);
             }
         }
@@ -708,7 +694,6 @@ namespace DigGame
         void DrawNightScreen()
         {
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0.03f, 0.03f, 0.08f, 0.94f));
-            _blockers.Add(new Rect(0, 0, Screen.width, Screen.height));
 
             float w = Mathf.Min(680f, Screen.width - 80f);
             float h = Mathf.Min(560f, Screen.height - 60f);
@@ -992,7 +977,6 @@ namespace DigGame
             Fill(frame, new Color(0.035f, 0.035f, 0.045f, 0.90f));
             Fill(new Rect(frame.x, frame.y, frame.width, 3f), new Color(0.72f, 0.72f, 0.76f, 0.95f));
             Fill(new Rect(frame.x, frame.yMax - 3f, frame.width, 3f), new Color(0.08f, 0.08f, 0.10f, 1f));
-            _blockers.Add(frame);
 
             int itemCount = player.Inventory.Count;
             int firstItem = Mathf.Max(0, itemCount - HotbarSlotCount);
@@ -1107,7 +1091,6 @@ namespace DigGame
         void DrawResultOverlay()
         {
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.8f));
-            _blockers.Add(new Rect(0, 0, Screen.width, Screen.height));
 
             bool won = _game.State == GameState.Won;
             string title = won ? "<color=#8ce89a>완주!</color>" : "<color=#ff7b7b>해고당했다</color>";

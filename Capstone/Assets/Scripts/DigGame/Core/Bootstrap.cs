@@ -69,12 +69,6 @@ namespace DigGame
             Launch(Random.Range(1, int.MaxValue));
         }
 
-        /// <summary>같은 맵을 다시 하고 싶을 때.</summary>
-        public static void RestartSameSeed()
-        {
-            Launch(_seed);
-        }
-
         static void Teardown()
         {
             if (_root != null)

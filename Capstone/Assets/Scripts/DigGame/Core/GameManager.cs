@@ -472,11 +472,6 @@ namespace DigGame
                 View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
         }
 
-        public bool PointerOverUI(Vector2 screenPos)
-        {
-            return Hud != null && Hud.BlocksPointer(screenPos);
-        }
-
         // ==================================================================
         public bool PlayerNearBuilding() => PlayerNearRect(BuildingRect);
         public bool PlayerNearRecycle() => PlayerNearRect(RecycleRect);
@@ -610,23 +605,6 @@ namespace DigGame
         {
             for (int i = 0; i < DiscoveredMines.Count; i++)
                 View.RefreshMine(DiscoveredMines[i]);
-        }
-
-        /// <summary>쓰레기를 지상에 반입 — 판매되고 오늘 할당량에 반영된다.</summary>
-        public void DeliverToSurface(List<LootItem> items, string source)
-        {
-            if (items == null || items.Count == 0) return;
-
-            int value = 0;
-            for (int i = 0; i < items.Count; i++) value += items[i].Value;
-
-            int paid = Mathf.RoundToInt(value * SellMultiplier);
-            Money += paid;
-            DeliveredToday += paid;
-            CheckQuotaStages();
-
-            string bonus = SellMultiplier > 1f ? $" (분리수거 x{SellMultiplier:0.0})" : "";
-            Log($"{source}: {items.Count}개 판매 → +{paid:N0}원{bonus}");
         }
 
         /// <summary>
