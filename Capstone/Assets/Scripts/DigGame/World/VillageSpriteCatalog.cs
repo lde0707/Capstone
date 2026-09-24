@@ -137,6 +137,36 @@ namespace DigGame
             Slice(EraRoot + "era_props_" + ClampEra(era),
                   EraPropPixels, PropKinds, BottomPivot)[Mathf.Abs(kind) % PropKinds];
 
+        // ---------------- 세트 보너스 랜드마크 ------------------------------
+        /// <summary>
+        /// 유물 한 분류를 전부 복원하면 마을에 들어서는 건물.
+        /// 일반 이웃 건물(64px)보다 크고, 시대를 타지 않는다.
+        /// 순서는 <c>RelicGroup</c> 과 같다.
+        /// </summary>
+        public const int LandmarkWidth = 96;        // 6칸
+        public const int LandmarkHeight = 80;       // 5칸
+
+        public static readonly string[] SetLandmarkNames =
+        { "공룡 공원", "요괴 마을", "세계 기담관", "국립 박물관", "추억의 거리", "미확인 구역" };
+
+        public static readonly string[] SetLandmarkDescs =
+        {
+            "울타리 안에서 공룡들이 어슬렁거린다",
+            "밤마다 도깨비불이 마을을 떠다닌다",
+            "천막 안에 세상의 기담이 모여 있다",
+            "나라의 보물이 한자리에 모였다",
+            "골목 하나가 통째로 1970년대가 됐다",
+            "무언가가 마을 위에 상주하기 시작했다"
+        };
+
+        public static Sprite SetLandmark(int group)
+        {
+            var all = Slice(EraRoot + "set_landmarks", LandmarkWidth,
+                SetLandmarkNames.Length, BottomPivot);
+            int i = Mathf.Abs(group) % SetLandmarkNames.Length;
+            return i < all.Length ? all[i] : null;
+        }
+
         // ---------------- 건물 간판 (고정 표식) -----------------------------
         /// <summary>간판 종류. 아이콘·색은 시대가 바뀌어도 고정이다.</summary>
         public enum SignKind { Dropoff = 0, Shop = 1, Restorer = 2 }

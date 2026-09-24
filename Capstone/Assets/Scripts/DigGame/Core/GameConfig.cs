@@ -122,12 +122,31 @@ namespace DigGame
         // ---------- 지상 건물 ----------
         public const int BuildingWidth = 2;
         public const int BuildingHeight = 2;
-        // 지상 배치 — 건물 스프라이트는 3칸 폭이므로 입구(1칸)와 겹치지 않게 벌려 둔다.
-        //   투입소[-9.5~-6.5]  내 집[-4~-1]  스폰[-1]  입구[+2] (최대 확장 시 [0~+5])
-        //   강화소[+5.5~+8.5]  복원소[+11~+14]
+        /// <summary>
+        /// 모든 지상 건물에 곱하는 크기. 건물이 화면을 덜 잡아먹어야
+        /// 같은 폭에 더 많이 들어가고 마을이 빽빽해 보인다. (기존 대비 30% 축소)
+        /// </summary>
+        public const float BuildingScale = 0.70f;
+
+        // 지상 배치 — 건물 폭(48px=3칸, x0.7 = 2.1칸)을 기준으로 최대한 좁혔다.
+        //   투입소[-8.05~-5.95]  내 집[-3.55~-1.45]  스폰[-1]  입구[0~+5] (최대 확장)
+        //   강화소[+5.95~+8.05]  복원소[+9.45~+11.55]  이웃집은 -11 / +13 부터
         public const int BuildingOffsetX = 6;       // 강화소(처리장) — 입구 오른쪽
-        public const int RecycleOffsetX = -9;       // 투입소(분리수거장) — 내 집 왼쪽
+        public const int RecycleOffsetX = -8;       // 투입소(분리수거장) — 내 집 왼쪽
+        public const int RestorerOffsetX = 10;      // 복원소 — 강화소 바깥
         public const int BuildingInteractRange = 2;
+
+        // ---------- 마을 밀도 ----------
+        /// <summary>이웃집이 들어서는 간격 (칸). 건물 폭 2.8칸이라 3칸이면 거의 맞붙는다.</summary>
+        public const int NeighborSpacing = 3;
+        /// <summary>이웃집 자리 수 — 맵 폭 전체를 덮는다.</summary>
+        public const int NeighborSlots = 52;
+        /// <summary>할당량 1단계를 넘겼을 때 들어서는 집 수.</summary>
+        public const int HousesPerFirstStage = 3;
+        /// <summary>2단계부터 한 단계당 들어서는 집 수.</summary>
+        public const int HousesPerStage = 5;
+        /// <summary>새 아침에 이사 오는 집 수.</summary>
+        public const int HousesPerNewDay = 3;
 
         // ---------- 장비 ----------
         public const int HeadlampCost1 = 250;       // 시야 +1
@@ -205,6 +224,42 @@ namespace DigGame
         public const float GasPocketValueMultiplier = 1.45f;
         public const float GasPocketHealthDamage = 10f;
         public const float GasPocketStaminaDamage = 15f;
+        // ---------- 유물 ----------
+        /// <summary>같은 유물이 땅속에 묻혀 있는 군데 수.</summary>
+        public const int RelicCopiesPerKind = 3;
+        public const int RelicMinSpacing = 5;
+        public const int RelicPlacementAttempts = 900;
+        /// <summary>한 번에 들고 다닐 수 있는 유물 수 (가방 부피와 별개).</summary>
+        public const int RelicCarryLimit = 8;
+        /// <summary>복원 1건에 걸리는 시간 (초). 낮 2분 기준으로 하루 여러 개가 나온다.</summary>
+        public const float RelicRestoreSeconds = 12f;
+        /// <summary>복원 비용 — 층이 깊을수록 비싸다 (깊이별 가치의 이 비율).</summary>
+        public const float RelicRestoreCostRate = 0.35f;
+        /// <summary>복원을 마쳤을 때 마을 기여로 들어오는 돈 (깊이별 가치의 이 비율).</summary>
+        public const float RelicRestoreRewardRate = 0.60f;
+        /// <summary>동시에 마을을 돌아다닐 수 있는 배회형 유물 수. 넘치면 전시로 바뀐다.</summary>
+        public const int MaxWanderingRelics = 8;
+        // ---------------- 세트 보너스 ----------------
+        /// <summary>세트를 완성할 때마다 판매액에 붙는 보너스.</summary>
+        public const float SetSellBonus = 0.06f;
+        /// <summary>공룡 공원 — 동시에 돌아다닐 수 있는 유물 수가 이만큼 늘어난다.</summary>
+        public const int DinoSetWanderBonus = 6;
+        /// <summary>세계 기담관 — 복원 시간이 이 비율로 줄어든다.</summary>
+        public const float CurioSetRestoreRate = 0.55f;
+        /// <summary>추억의 거리 — 중복 유물 환전액 배율.</summary>
+        public const float RetroSetDuplicateRate = 2f;
+        /// <summary>국립 박물관 — 판매액에 추가로 붙는 보너스.</summary>
+        public const float MuseumSetSellBonus = 0.10f;
+        /// <summary>요괴 마을 — 밤에 떠다니는 도깨비불 수.</summary>
+        public const int YokaiSetWispCount = 16;
+        /// <summary>랜드마크는 일반 건물보다 조금 덜 줄인다 (눈에 띄어야 한다).</summary>
+        public const float LandmarkScale = 0.78f;
+
+        /// <summary>복원본 스프라이트(64px=4칸)에 곱하는 크기.</summary>
+        public const float RelicAliveScale = 0.42f;
+        /// <summary>땅속 발굴본(32px=2칸)에 곱하는 크기.</summary>
+        public const float RelicBuriedScale = 0.46f;
+
         public const int MinesPerLayer = 12;
         public const int MinePlacementAttempts = 2400;
         public const int MineMinSpacing = 13;

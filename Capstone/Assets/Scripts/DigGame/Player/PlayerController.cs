@@ -598,9 +598,9 @@ namespace DigGame
         /// <summary>주변 칸의 보물을 가까이 가면 자동으로 줍는다.</summary>
         void PickUpNearby()
         {
-            if (InventoryFull) return;
-
             Vector3 p = transform.position;
+            PickUpRelicsNearby(p);
+            if (InventoryFull) return;
             for (int dy = -1; dy <= 1; dy++)
             {
                 for (int dx = -1; dx <= 1; dx++)
@@ -619,6 +619,38 @@ namespace DigGame
                         SetBlocked("가방이 가득 찼다 — 지상 분리수거장에서 E로 비우자");
                         return;
                     }
+                }
+            }
+        }
+
+        /// <summary>파낸 자리에 드러난 유물을 줍는다. 가방 부피와는 무관하게 등에 진다.</summary>
+        void PickUpRelicsNearby(Vector3 p)
+        {
+            var relics = _game.Relics;
+            if (relics == null || relics.CarryFull) return;
+
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int x = Cell.x + dx, y = Cell.y + dy;
+                    if (!_grid.InBounds(x, y) || !_grid.HasRelic(x, y)) continue;
+                    if (!_grid.IsWalkable(x, y)) continue;
+
+                    Vector3 c = WorldGrid.CellToWorld(x, y);
+                    float radius = 0.80f * GameConfig.CellSize;
+                    if ((c - p).sqrMagnitude > radius * radius) continue;
+
+                    // 꺼낸 뒤에 자리가 없으면 유물이 사라지므로 미리 확인한다.
+                    if (!_grid.TryPeekRelic(x, y, out int peek)) continue;
+                    if (!relics.CanAccept(peek))
+                    {
+                        SetBlocked($"유물을 더 들 수 없다 ({GameConfig.RelicCarryLimit}개) — 복원소에 맡기자");
+                        return;
+                    }
+                    if (_grid.TryTakeRelic(x, y, out int relicId))
+                        relics.Excavate(relicId);
+                    if (relics.CarryFull) return;
                 }
             }
         }

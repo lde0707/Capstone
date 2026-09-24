@@ -17,9 +17,12 @@ namespace DigGame
         readonly Dictionary<int, LootItem> _treasures = new Dictionary<int, LootItem>();
         readonly Dictionary<int, DigFeature> _digFeatures = new Dictionary<int, DigFeature>();
         readonly Dictionary<int, MineSite> _mineSites = new Dictionary<int, MineSite>();
+        /// <summary>땅속에 묻힌 유물 — 칸 → 유물 번호.</summary>
+        readonly Dictionary<int, int> _relics = new Dictionary<int, int>();
 
         public System.Action<int, int, TileKind> OnTileChanged;
         public System.Action<int, int> OnTreasureRemoved;
+        public System.Action<int, int> OnRelicRemoved;
 
         public WorldGrid(int width, int height)
         {
@@ -111,6 +114,44 @@ namespace DigGame
                     yield return (new Vector2Int(kv.Key % Width, kv.Key / Width), kv.Value);
             }
         }
+
+        // ---------- 유물 ----------
+        public void PutRelic(int x, int y, int relicId)
+        {
+            if (!InBounds(x, y)) return;
+            _relics[Index(x, y)] = relicId;
+        }
+
+        public bool HasRelic(int x, int y) => InBounds(x, y) && _relics.ContainsKey(Index(x, y));
+
+        public bool TryPeekRelic(int x, int y, out int relicId)
+        {
+            relicId = -1;
+            return InBounds(x, y) && _relics.TryGetValue(Index(x, y), out relicId);
+        }
+
+        public bool TryTakeRelic(int x, int y, out int relicId)
+        {
+            relicId = -1;
+            if (!InBounds(x, y)) return false;
+            int i = Index(x, y);
+            if (!_relics.TryGetValue(i, out relicId)) return false;
+            _relics.Remove(i);
+            OnRelicRemoved?.Invoke(x, y);
+            return true;
+        }
+
+        public IEnumerable<(Vector2Int cell, int relicId)> AllRelics
+        {
+            get
+            {
+                foreach (var kv in _relics)
+                    yield return (new Vector2Int(kv.Key % Width, kv.Key / Width), kv.Value);
+            }
+        }
+
+        /// <summary>아직 땅에 남아 있는 유물 수.</summary>
+        public int BuriedRelicCount => _relics.Count;
 
         // ---------- 특수 지층 ----------
         public void PutDigFeature(int x, int y, DigFeature feature)

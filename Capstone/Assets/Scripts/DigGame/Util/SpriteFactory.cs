@@ -145,6 +145,7 @@ namespace DigGame
             EnvironmentSpriteCatalog.Clear();
             PlayerSpriteCatalog.Clear();
             VillageSpriteCatalog.Clear();
+            RelicSpriteCatalog.Clear();
 
             foreach (var sp in _cache.Values)
             {

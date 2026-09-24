@@ -107,8 +107,79 @@ namespace DigGame
             PlaceGuaranteedSingleSlotTrash(grid, rng);
             PlaceStarterTrash(grid, rng);
             PlaceDigFeatures(grid, rng);
+            PlaceRelics(grid, rng);
 
             return grid;
+        }
+
+        /// <summary>
+        /// 유물 58종을 층별로 흩뿌린다.
+        /// 한 유물은 <see cref="GameConfig.RelicCopiesPerKind"/> 군데에 묻혀 있어서
+        /// 어디를 파도 뭔가 하나쯤은 나오지만, 같은 유물을 두 번 캐면 자동 환전된다.
+        /// 서로 너무 붙어 있지 않게 최소 간격을 둔다.
+        /// </summary>
+        static void PlaceRelics(WorldGrid grid, System.Random rng)
+        {
+            var placed = new List<Vector2Int>();
+
+            for (int depth = 1; depth <= 4; depth++)
+            {
+                var defs = RelicCatalog.OfDepth(depth);
+                if (defs == null || defs.Count == 0) continue;
+
+                Zone zone = depth == 1 ? Zone.Surface
+                    : depth == 2 ? Zone.Shallow
+                    : depth == 3 ? Zone.Deep : Zone.Abyss;
+
+                for (int i = 0; i < defs.Count; i++)
+                {
+                    for (int copy = 0; copy < GameConfig.RelicCopiesPerKind; copy++)
+                    {
+                        if (TryPickRelicCell(grid, zone, rng, placed, out var cell))
+                        {
+                            grid.PutRelic(cell.x, cell.y, defs[i].Id);
+                            placed.Add(cell);
+                        }
+                    }
+                }
+            }
+        }
+
+        static bool TryPickRelicCell(WorldGrid grid, Zone zone, System.Random rng,
+            List<Vector2Int> placed, out Vector2Int cell)
+        {
+            cell = default;
+            for (int attempt = 0; attempt < GameConfig.RelicPlacementAttempts; attempt++)
+            {
+                int x = rng.Next(2, grid.Width - 2);
+                int y = rng.Next(GameConfig.StarterTrashRow + 2, grid.Height - 3);
+
+                TileKind kind = grid.Get(x, y);
+                if (!TileInfo.IsDiggable(kind) || TileInfo.ZoneOf(kind) != zone) continue;
+                if (grid.TryGetMineSite(x, y, out _)) continue;
+                if (grid.HasRelic(x, y)) continue;
+
+                // 유물끼리 몰려 있으면 한 번에 쓸어 담게 되므로 떨어뜨린다.
+                bool tooClose = false;
+                for (int i = 0; i < placed.Count; i++)
+                {
+                    if (Mathf.Max(Mathf.Abs(placed[i].x - x), Mathf.Abs(placed[i].y - y))
+                        < GameConfig.RelicMinSpacing)
+                    {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) continue;
+
+                // 유물 칸은 쓰레기·특수 지층과 겹치지 않게 비워 둔다.
+                if (grid.HasTreasure(x, y)) grid.TryTakeTreasure(x, y, out _);
+                grid.ClearDigFeature(x, y);
+
+                cell = new Vector2Int(x, y);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>

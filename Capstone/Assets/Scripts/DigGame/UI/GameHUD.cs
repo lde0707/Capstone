@@ -23,6 +23,8 @@ namespace DigGame
         bool _showHelp = true;
         bool _stylesReady;
         int _nightTab;   // 0 능력치 / 1 장비 / 2 펫 / 3 시설
+        bool _showCodex;
+        int _codexTab;   // 유물 도감 분류 탭
 
         readonly List<Rect> _blockers = new List<Rect>();
 
@@ -102,7 +104,10 @@ namespace DigGame
         void Update()
         {
             var kb = Keyboard.current;
-            if (kb != null && kb.tabKey.wasPressedThisFrame) _showHelp = !_showHelp;
+            if (kb == null) return;
+            if (kb.tabKey.wasPressedThisFrame) _showHelp = !_showHelp;
+            if (kb.cKey.wasPressedThisFrame) _showCodex = !_showCodex;
+            if (kb.escapeKey.wasPressedThisFrame) _showCodex = false;
         }
 
         void EnsureStyles()
@@ -162,12 +167,15 @@ namespace DigGame
                     DrawContext();
                     DrawLogPanel();
                     if (_showHelp) DrawHelpPanel();
+                    DrawRelicStatus();
                     if (_game.ShopOpen) DrawDayShop();
                     DrawInventoryHotbar();
+                    if (_showCodex) DrawCodex();
                     break;
 
                 case GameState.Night:
                     DrawNightScreen();
+                    if (_showCodex) DrawCodex();
                     break;
 
                 case GameState.Won:
@@ -389,7 +397,19 @@ namespace DigGame
                     $"<b>힘 우위</b> — 굴착 속도 +{digSpeedBonus}%", _label);
             }
 
-            if (!_game.ShopOpen && _game.PlayerNearRecycle())
+            var relics = _game.Relics;
+            if (!_game.ShopOpen && _game.PlayerNearRestorer() && relics != null)
+            {
+                var hr = new Rect(Screen.width * 0.5f - 210, 26, 420, 30);
+                Fill(hr, new Color(0.16f, 0.08f, 0.26f, 0.90f));
+                string text = relics.CarriedCount > 0
+                    ? $"[E] 유물 {relics.CarriedCount}개 복원 맡기기 · 비용 {relics.CarriedRestoreCost:N0}원"
+                    : relics.QueueCount > 0
+                        ? $"복원소 · 지금 {relics.QueueCount}개 복원 중"
+                        : "복원소 · 맡길 유물이 없다";
+                GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
+            }
+            else if (!_game.ShopOpen && _game.PlayerNearRecycle())
             {
                 var hr = new Rect(Screen.width * 0.5f - 190, 26, 380, 30);
                 Fill(hr, new Color(0.06f, 0.22f, 0.10f, 0.88f));
@@ -410,7 +430,8 @@ namespace DigGame
             {
                 float w = 330f;
                 // 정보 표시일 뿐 버튼이 없으므로 클릭 차단 영역으로 등록하지 않는다.
-                var mr = new Rect(Screen.width - w - MarginX, MarginY + TopRightHeight + 8f, w, 224);
+                var mr = new Rect(Screen.width - w - MarginX,
+                    MarginY + TopRightHeight + 8f + RelicPanelHeight, w, 224);
                 Fill(mr, new Color(0.13f, 0.11f, 0.03f, 0.86f));
 
                 float x = mr.x + 12, y = mr.y + 10, iw = mr.width - 24;
@@ -432,6 +453,196 @@ namespace DigGame
                 GUI.Label(new Rect(x, y, iw, 20),
                     $"[J] 대량 운반  {GameConfig.HaulerHireCost:N0}원 · 보관함 5개씩", _small);
             }
+        }
+
+        // ==================================================================
+        // 유물 — 등에 진 유물과 복원 진행
+        // ==================================================================
+        /// <summary>우측 패널이 겹치지 않도록 유물 패널이 차지하는 높이.</summary>
+        float RelicPanelHeight
+        {
+            get
+            {
+                var r = _game.Relics;
+                if (r == null) return 0f;
+                if (r.CarriedCount == 0 && r.QueueCount == 0 && r.FoundCount == 0) return 0f;
+                return (r.QueueCount > 0 ? 82f : 56f) + 8f;
+            }
+        }
+
+        void DrawRelicStatus()
+        {
+            var r = _game.Relics;
+            if (r == null) return;
+            if (RelicPanelHeight <= 0f) return;
+
+            float w = 330f;
+            float h = RelicPanelHeight - 8f;
+            var panel = new Rect(Screen.width - w - MarginX,
+                MarginY + TopRightHeight + 8f, w, h);
+            Fill(panel, new Color(0.12f, 0.06f, 0.20f, 0.86f));
+
+            float x = panel.x + 12, y = panel.y + 8, iw = panel.width - 24;
+            GUI.Label(new Rect(x, y, iw, 22),
+                $"<color=#dcaaff><b>유물 도감</b></color>  복원 {r.RestoredCount}/{r.TotalCount}" +
+                $" · 발굴 {r.FoundCount}", _label);
+            y += 22;
+            GUI.Label(new Rect(x, y, iw, 20),
+                $"등에 진 유물 {r.CarriedCount}/{GameConfig.RelicCarryLimit} · [C] 도감", _small);
+            y += 22;
+
+            if (r.QueueCount > 0)
+            {
+                var def = RelicCatalog.Get(r.Queue[0].RelicId);
+                var bar = new Rect(x, y, iw, 16);
+                Fill(bar, new Color(1f, 1f, 1f, 0.12f));
+                Fill(new Rect(bar.x, bar.y, bar.width * r.FrontProgress01, bar.height),
+                    new Color32(186, 122, 240, 255));
+                GUI.Label(new Rect(bar.x + 6, bar.y - 2, bar.width - 12, 20),
+                    $"<b>{(def != null ? def.Name : "")}</b> 복원 중" +
+                    (r.QueueCount > 1 ? $"  (대기 {r.QueueCount - 1})" : ""), _small);
+            }
+        }
+
+        // ==================================================================
+        // 유물 도감
+        // ==================================================================
+        static readonly string[] CodexTabs =
+        { "공룡", "요괴", "괴수", "역사", "근현대", "SF" };
+
+        void DrawCodex()
+        {
+            var sys = _game.Relics;
+            if (sys == null) return;
+
+            const int Cols = 8;
+            const float CellW = 104f, CellH = 118f, Gap = 6f;
+
+            var group = (RelicGroup)Mathf.Clamp(_codexTab, 0, RelicCatalog.GroupCount - 1);
+            var defs = RelicCatalog.OfGroup(group);
+            int rows = Mathf.Max(1, Mathf.CeilToInt(defs.Count / (float)Cols));
+
+            float w = Cols * CellW + (Cols - 1) * Gap + 40f;
+            float h = 152f + rows * (CellH + Gap) + 46f;
+            var panel = new Rect(Screen.width * 0.5f - w * 0.5f,
+                Mathf.Max(20f, Screen.height * 0.5f - h * 0.5f), w, h);
+            Panel(panel, new Color(0.07f, 0.06f, 0.11f, 0.97f));
+            Outline(panel, new Color(0.68f, 0.52f, 0.92f, 0.65f));
+
+            float x = panel.x + 20f, y = panel.y + 14f, iw = panel.width - 40f;
+
+            GUI.Label(new Rect(x, y, iw, 30),
+                $"<b>유물 도감</b>   복원 <color=#c79bff>{sys.RestoredCount}</color> / {sys.TotalCount}" +
+                $"   ·   발굴 {sys.FoundCount} / {sys.TotalCount}", _title);
+            if (GUI.Button(new Rect(panel.xMax - 108f, y - 2f, 88f, 28f), "닫기 (C)", _buttonSmall))
+                _showCodex = false;
+            y += 32f;
+
+            string bonus = sys.CompletedSets > 0
+                ? $"<color=#9be89b>세트 {sys.CompletedSets}개 완성 · 판매액 +{sys.SetSellBonus * 100f:0}%</color>"
+                : "한 분류를 전부 복원하면 마을에 랜드마크가 서고 세트 보너스가 붙는다";
+            GUI.Label(new Rect(x, y, iw, 20), bonus, _small);
+            y += 22f;
+
+            // 지금 보고 있는 분류의 보상
+            int gi = (int)group;
+            bool hasSet = sys.HasSet(group);
+            int doneHere = sys.RestoredInGroup(group);
+            int totalHere = defs.Count;
+            string mark = hasSet ? "<color=#9be89b>✦ 완성</color>" : $"<color=#b9b4c2>{doneHere}/{totalHere}</color>";
+            GUI.Label(new Rect(x, y, iw, 20),
+                $"{mark}  <b>{RelicCatalog.SetBonusName(group)}</b> — " +
+                $"{VillageSpriteCatalog.SetLandmarkNames[gi]} · {RelicSystem.SetPerkText(group)}", _small);
+            y += 24f;
+
+            // 분류 탭
+            float tw = (iw - (CodexTabs.Length - 1) * 6f) / CodexTabs.Length;
+            for (int i = 0; i < CodexTabs.Length; i++)
+            {
+                var g = (RelicGroup)i;
+                int done = sys.RestoredInGroup(g);
+                int total = RelicCatalog.OfGroup(g).Count;
+                string label = $"{CodexTabs[i]} {done}/{total}";
+                if (GUI.Button(new Rect(x + i * (tw + 6f), y, tw, 30f), label,
+                        i == _codexTab ? _tabOn : _tab))
+                    _codexTab = i;
+            }
+            y += 38f;
+
+            // 칸
+            for (int i = 0; i < defs.Count; i++)
+            {
+                int col = i % Cols, row = i / Cols;
+                var cell = new Rect(x + col * (CellW + Gap), y + row * (CellH + Gap), CellW, CellH);
+                DrawCodexCell(cell, defs[i], sys);
+            }
+
+            y += rows * (CellH + Gap) + 4f;
+            GUI.Label(new Rect(x, y, iw, 20),
+                "땅속 <color=#dcaaff>보랏빛 광점</color>이 유물이다 · 캐서 복원소(오른쪽 건물) 앞에서 E",
+                _small);
+        }
+
+        void DrawCodexCell(Rect cell, RelicDef def, RelicSystem sys)
+        {
+            bool restored = sys.IsRestored(def.Id);
+            bool found = sys.IsFound(def.Id);
+            bool pending = sys.IsPending(def.Id);
+
+            Fill(cell, restored ? new Color(0.17f, 0.13f, 0.24f, 1f)
+                : found ? new Color(0.12f, 0.11f, 0.14f, 1f)
+                : new Color(0.08f, 0.08f, 0.09f, 1f));
+            Outline(cell, restored ? new Color(0.72f, 0.56f, 0.96f, 0.9f)
+                : new Color(1f, 1f, 1f, 0.12f));
+
+            var art = new Rect(cell.x + 6f, cell.y + 6f, cell.width - 12f, 74f);
+            Sprite sprite = restored ? RelicSpriteCatalog.AliveIcon(def)
+                : RelicSpriteCatalog.Buried(def);
+
+            if (sprite != null && sprite.texture != null)
+            {
+                Color keep = GUI.color;
+                GUI.color = restored ? Color.white
+                    : found ? new Color(0.72f, 0.70f, 0.78f, 1f)
+                    : new Color(0f, 0f, 0f, 0.62f);          // 미발견은 검은 실루엣
+                DrawSprite(art, sprite);
+                GUI.color = keep;
+            }
+
+            string name = found ? def.Name : "???";
+            string color = restored ? "#e8d6ff" : found ? "#bdb8c6" : "#6f6c78";
+            GUI.Label(new Rect(cell.x + 4f, cell.y + 80f, cell.width - 8f, 18f),
+                $"<color={color}>{name}</color>", _micro);
+
+            string state = restored ? "<color=#9be89b>복원 완료</color>"
+                : pending ? "<color=#ffd98a>복원 대기</color>"
+                : found ? "<color=#ffd98a>미복원</color>"
+                : $"{def.Depth}층";
+            string move = def.Behavior == RelicBehavior.Wander ? "배회" : "전시";
+            GUI.Label(new Rect(cell.x + 4f, cell.y + 97f, cell.width - 8f, 16f),
+                restored ? $"<color=#8fa3b8>{move}</color>" : state, _micro);
+        }
+
+        /// <summary>스프라이트를 시트에서 잘라 비율을 지켜 그린다.</summary>
+        void DrawSprite(Rect area, Sprite sprite)
+        {
+            var tex = sprite.texture;
+            if (tex == null || tex.width <= 0 || tex.height <= 0) return;
+
+            Rect src = sprite.rect;
+            var coords = new Rect(src.x / tex.width, src.y / tex.height,
+                src.width / tex.width, src.height / tex.height);
+
+            float aspect = src.width / Mathf.Max(1f, src.height);
+            float dw = area.width, dh = area.width / Mathf.Max(0.01f, aspect);
+            if (dh > area.height)
+            {
+                dh = area.height;
+                dw = area.height * aspect;
+            }
+            var dst = new Rect(area.x + (area.width - dw) * 0.5f,
+                area.y + (area.height - dh) * 0.5f, dw, dh);
+            GUI.DrawTextureWithTexCoords(dst, tex, coords, true);
         }
 
         // ==================================================================
@@ -696,6 +907,19 @@ namespace DigGame
                 ewMax ? null : $"{ewCost:N0}원",
                 _game.Money >= ewCost, () => _game.TryBuyEntranceWiden());
 
+            var relics = _game.Relics;
+            if (relics != null)
+            {
+                y += 6;
+                GUI.Label(new Rect(x + 4, y, w, 20),
+                    $"<color=#dcaaff>유물</color>  복원 {relics.RestoredCount}/{relics.TotalCount}" +
+                    $" · 발굴 {relics.FoundCount}" +
+                    (relics.CompletedSets > 0
+                        ? $" · 세트 {relics.CompletedSets}개 (판매 +{relics.SetSellBonus * 100f:0}%)"
+                        : "") + "   [C] 도감", _small);
+                y += 20;
+            }
+
             y += 6;
             GUI.Label(new Rect(x + 4, y, w, 20),
                 $"고용된 일꾼  {_game.Workers.Count}명 — 일당은 매일 밤 자동 지급된다", _small);
@@ -721,7 +945,7 @@ namespace DigGame
         void DrawHelpPanel()
         {
             // 하단 인벤토리 핫바와 겹치지 않게 그 위에 배치한다.
-            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 391, 510, 267);
+            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 429, 510, 305);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             float y = r.y + 8;
@@ -740,6 +964,8 @@ namespace DigGame
                 "힘이 땅의 요구치보다 높으면 단계마다 굴착 속도 +35%",
                 "초록 잔디 지반은 파괴 불가 · 스폰 오른쪽 2칸의 입구 이용",
                 "도시광산 E: 보관/회수 · H 20초 자동 재활용 · J 대량 운반",
+                "보랏빛 광점 — 유물. 캐서 복원소(오른쪽 끝) 앞에서 E 로 맡긴다",
+                "C — 유물 도감 (한 분류를 다 모으면 판매액 세트 보너스)",
                 "해가 지기 전에 꼭 지상으로! 지하에 있으면 가방을 몰수당한다",
                 "Shift+R — 새 게임"
             };

@@ -34,6 +34,8 @@ namespace DigGame
         readonly Dictionary<MaterialKind, TileBase> _buriedHintTiles = new Dictionary<MaterialKind, TileBase>();
 
         readonly Dictionary<Vector2Int, GameObject> _treasureMarkers = new Dictionary<Vector2Int, GameObject>();
+        readonly Dictionary<Vector2Int, GameObject> _relicMarkers = new Dictionary<Vector2Int, GameObject>();
+        TileBase _relicHintTile;
         readonly Dictionary<int, GameObject> _mineMarkers = new Dictionary<int, GameObject>();
 
         Transform _markerRoot;
@@ -68,8 +70,11 @@ namespace DigGame
             BuildSmoothFog();
             BuildHighlight();
 
+            BuildBuriedRelicHints();
+
             _grid.OnTileChanged += HandleTileChanged;
             _grid.OnTreasureRemoved += HandleTreasureRemoved;
+            _grid.OnRelicRemoved += HandleRelicRemoved;
         }
 
         void OnDestroy()
@@ -78,6 +83,7 @@ namespace DigGame
             {
                 _grid.OnTileChanged -= HandleTileChanged;
                 _grid.OnTreasureRemoved -= HandleTreasureRemoved;
+                _grid.OnRelicRemoved -= HandleRelicRemoved;
             }
 
             // 런타임에 만든 Tile 에셋 정리 (재시작 시 누수 방지)
@@ -91,6 +97,8 @@ namespace DigGame
                 DestroyGenerated(tile);
             foreach (var tile in _buriedHintTiles.Values)
                 DestroyGenerated(tile);
+            DestroyGenerated(_relicHintTile);
+            _relicHintTile = null;
             _flatTiles.Clear();
             _terrainTiles.Clear();
             _passageTiles.Clear();
@@ -327,6 +335,11 @@ namespace DigGame
                 HideBuriedHint(x, y);
                 ShowTreasureMarker(x, y);
             }
+            if (TileInfo.IsWalkable(kind) && _grid.HasRelic(x, y))
+            {
+                HideBuriedHint(x, y);
+                ShowRelicMarker(x, y);
+            }
             if (TileInfo.IsWalkable(kind)) HideDigFeatureHint(x, y);
         }
 
@@ -398,6 +411,69 @@ namespace DigGame
         {
             if (_buriedHintMap != null)
                 _buriedHintMap.SetTile(ToCell(x, y), null);
+        }
+
+        /// <summary>땅속 유물은 보라 광점으로 예고된다 — 쓰레기 힌트보다 크고 진하다.</summary>
+        void BuildBuriedRelicHints()
+        {
+            foreach (var (cell, _) in _grid.AllRelics)
+            {
+                if (_grid.IsWalkable(cell.x, cell.y)) continue;
+                Vector3Int tileCell = ToCell(cell.x, cell.y);
+                _buriedHintMap.SetTile(tileCell, RelicHintTile());
+                _buriedHintMap.SetTransformMatrix(tileCell, Matrix4x4.TRS(
+                    Vector3.zero, Quaternion.identity, Vector3.one * 0.80f));
+            }
+        }
+
+        TileBase RelicHintTile()
+        {
+            if (_relicHintTile != null) return _relicHintTile;
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = SpriteFactory.Diamond(Color.white);
+            tile.color = new Color(0.86f, 0.55f, 1f, 0.78f);
+            tile.flags = TileFlags.LockColor;
+            _relicHintTile = tile;
+            return tile;
+        }
+
+        /// <summary>파낸 자리에 드러난 화석/깨진 물건.</summary>
+        void ShowRelicMarker(int x, int y)
+        {
+            var key = new Vector2Int(x, y);
+            if (_relicMarkers.ContainsKey(key)) return;
+            if (!_grid.TryPeekRelic(x, y, out int relicId)) return;
+
+            var def = RelicCatalog.Get(relicId);
+            var go = new GameObject($"Relic({x},{y})");
+            go.transform.SetParent(_markerRoot, false);
+            // 발굴본은 bottom-center 피벗이라 칸 바닥에 앉힌다.
+            go.transform.position = WorldGrid.CellToWorld(x, y)
+                + Vector3.down * (0.5f * GameConfig.CellSize);
+            go.transform.localScale = Vector3.one * GameConfig.RelicBuriedScale;
+
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = RelicSpriteCatalog.Buried(def);
+            sr.sortingOrder = OrderTreasure + 1;
+            if (sr.sprite == null)
+            {
+                sr.sprite = SpriteFactory.Diamond(Color.white);
+                sr.color = new Color(0.86f, 0.55f, 1f, 1f);
+            }
+
+            _relicMarkers[key] = go;
+        }
+
+        void HandleRelicRemoved(int x, int y)
+        {
+            var key = new Vector2Int(x, y);
+            HideBuriedHint(x, y);
+            if (_relicMarkers.TryGetValue(key, out var go))
+            {
+                Destroy(go);
+                _relicMarkers.Remove(key);
+            }
         }
 
         void ShowTreasureMarker(int x, int y)
@@ -499,7 +575,8 @@ namespace DigGame
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.position = stand
-                + Vector3.up * (VillageSpriteCatalog.SignLift * GameConfig.CellSize);
+                + Vector3.up * (VillageSpriteCatalog.SignLift
+                                * GameConfig.BuildingScale * GameConfig.CellSize);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = VillageSpriteCatalog.Sign(kind, _villageEra);
             sr.sortingOrder = order;
@@ -520,6 +597,7 @@ namespace DigGame
             _upgradeShop.transform.SetParent(_markerRoot, false);
             _upgradeShop.transform.position = SurfaceStand(rect);
 
+            _upgradeShop.transform.localScale = Vector3.one * GameConfig.BuildingScale;
             var sr = _upgradeShop.AddComponent<SpriteRenderer>();
             sr.sprite = VillageSpriteCatalog.EraShop(_villageEra);
             sr.sortingOrder = OrderMine;
@@ -572,6 +650,8 @@ namespace DigGame
                 Vector3 stand = SurfaceStand(rect);
                 _surfaceRecycle.transform.position = stand;
 
+                _surfaceRecycle.transform.localScale = Vector3.one * GameConfig.BuildingScale;
+
                 var binGo = new GameObject("SurfaceBin");
                 binGo.transform.SetParent(_surfaceRecycle.transform, false);
                 binGo.transform.position = stand;
@@ -584,7 +664,8 @@ namespace DigGame
 
                 // 분리수거장 업그레이드 단계를 간판 위 작은 배지로 보여 준다.
                 AddRecycleSign(_surfaceRecycle.transform,
-                    stand + Vector3.up * (5.1f * GameConfig.CellSize), 3, 0.55f,
+                    stand + Vector3.up
+                        * (5.1f * GameConfig.BuildingScale * GameConfig.CellSize), 3, 0.55f,
                     OrderMine + 2, "SurfaceRecycleSign");
             }
 

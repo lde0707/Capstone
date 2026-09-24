@@ -119,7 +119,7 @@ def a_raptor(f):
     b.poly([(16, g - 20 + t), (2, g - 26 + t), (2, g - 23 + t), (16, g - 14 + t)], mid)
     # 다리
     legs2(b, 24, g, 6, f, body, mid, 4, 12 + t)
-    for x in (18 if f == 0 else 21, 30 if f == 0 else 27):
+    for x in (swing(f, 18, 21), swing(f, 30, 27)):
         b.rect(x - 2, g - 1, x + 4, g, dk)
         b.px(x + 4, g - 3, C(232, 228, 216))
     return fin(b)
@@ -301,9 +301,10 @@ def a_ptera(f):
     b = alive(); g = b.ground
     body, mid, dk = C(198, 178, 146), C(150, 130, 102), C(102, 88, 68)
     y = 20 + bob(f, 0, 3)
-    span = 22 if f == 0 else 18
-    b.poly([(24, y), (24 - span, y - 8), (24 - span + 4, y + 4), (24, y + 4)], mid)
-    b.poly([(24, y), (24 + span, y - 8), (24 + span - 4, y + 4), (24, y + 4)], body)
+    span = swing(f, 22, 18)
+    tip = cyc(f, -10, -4, 3, -4)                 # 날개 끝 높이
+    b.poly([(24, y), (24 - span, y + tip), (24 - span + 4, y + tip + 12), (24, y + 4)], mid)
+    b.poly([(24, y), (24 + span, y + tip), (24 + span - 4, y + tip + 12), (24, y + 4)], body)
     b.ellipse(19, y - 2, 29, y + 8, mid)
     b.poly([(28, y + 1), (44, y + 4), (28, y + 6)], body)     # 부리
     b.poly([(26, y - 1), (34, y - 8), (27, y + 1)], C(212, 150, 96))  # 볏
@@ -334,17 +335,18 @@ def a_archaeo(f):
     b = alive(); g = b.ground
     body, mid, dk = C(180, 126, 78), C(136, 92, 54), C(92, 62, 36)
     y = 20 + bob(f, 0, 3)
-    up = f == 0
+    lift0 = cyc(f, 9, 3, -3, 3)          # 날갯짓 한 바퀴 (위 → 수평 → 아래 → 수평)
+    # 날개 — 양쪽이 같이 오르내린다. 몸통보다 먼저 깔아야 몸이 가려지지 않는다
+    for s in (-1, 1):
+        tipy = y - lift0
+        span = 17 if lift0 < 6 else 14           # 위로 접을수록 폭이 줄어 보인다
+        b.poly([(24, y - 1), (24 + s * span, tipy), (24 + s * (span - 3), tipy + 6), (24, y + 4)],
+               body if s > 0 else mid)
+        for k in range(4):
+            b.line(24 + s * (5 + k * 3), y + 1, 24 + s * (8 + k * 3), tipy + 5, dk)
     # 몸통
     b.ellipse(18, y - 3, 31, y + 9, mid)
     b.ellipse(20, y - 2, 27, y + 4, body)
-    # 날개 — 한 장은 위로, 한 장은 아래로 (퍼덕임)
-    for s, lift in ((-1, 1 if up else -1), (1, -1 if up else 1)):
-        tipy = y - 10 * lift
-        b.poly([(24, y), (24 + s * 17, tipy), (24 + s * 14, tipy + 7), (24, y + 5)],
-               body if s > 0 else mid)
-        for k in range(4):
-            b.line(24 + s * (5 + k * 3), y + 2, 24 + s * (9 + k * 3), tipy + 6, dk)
     # 머리 + 부리
     b.ellipse(26, y - 9, 35, y - 1, body)
     b.poly([(33, y - 7), (42, y - 4), (33, y - 2)], C(236, 190, 92))
@@ -388,7 +390,7 @@ def a_ankylo(f):
         b.poly([(x - 2, g - 20 + t), (x + 2, g - 20 + t), (x, g - 25 + t)], C(196, 178, 132))
     b.ellipse(34, g - 20 + t, 46, g - 10 + t, mid)
     b.px(43, g - 17 + t, DARK)
-    tail = -3 if f == 0 else 3
+    tail = swing(f, -3, 3)
     b.rect(6, g - 18 + tail + t, 14, g - 14 + tail + t, mid)       # 꼬리 자루
     b.rect(6, g - 18 + tail + t, 14, g - 17 + tail + t, body)
     b.ellipse(0, g - 26 + tail + t, 12, g - 10 + tail + t, C(154, 140, 104))

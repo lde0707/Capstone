@@ -7,6 +7,7 @@ from PIL import Image
 from pixbox import Box, K, C
 
 BW, AW = 32, 64          # buried / alive 캔버스 (복원본은 사방 8px 여백을 둔다)
+FRAMES = 4               # 복원본 애니메이션 프레임 수 (걷기·숨쉬기 한 바퀴)
 
 # ---------------------------------------------------------------- 공용 색
 BONE1, BONE2, BONE3 = C(236, 230, 210), C(190, 180, 154), C(134, 124, 102)
@@ -126,6 +127,15 @@ def clipped(img):
     return sorted(sides)
 
 
+
+def eyes(b, x, y, gap=5, c=DARK, white=C(248, 248, 252)):
+    """큰 흰자 + 둥근 동공. 복원된 생물은 전부 이 눈을 쓴다."""
+    for dx in (0, gap):
+        b.ellipse(x + dx, y, x + dx + 3, y + 3, white)
+        b.ellipse(x + dx + 1, y + 1, x + dx + 2, y + 2, c)
+        b.px(x + dx + 1, y + 1, C(252, 252, 255))
+
+
 def fin(b, glow=None, shade=True):
     b.outline()
     if glow:
@@ -167,8 +177,8 @@ def bone_rod(b, x0, y0, x1, y1, thick=2, c1=BONE1, c2=BONE2):
 
 
 def pedestal(b, half=13, h=5, c1=STONE1, c2=STONE2, c3=STONE3):
-    """전시형 좌대."""
-    cx, g = b.w // 2, b.ground
+    """전시형 좌대. 복원본 캔버스는 여백만큼 밀리므로 그림 기준 중앙에 맞춘다."""
+    cx, g = b.w // 2 - getattr(b, "OX", 0), b.ground
     b.rect(cx - half, g - h, cx + half, g, c2)
     b.rect(cx - half, g - h, cx + half, g - h + 1, c1)
     b.rect(cx - half, g - 1, cx + half, g, c3)
@@ -176,24 +186,65 @@ def pedestal(b, half=13, h=5, c1=STONE1, c2=STONE2, c3=STONE3):
 
 
 def bob(frame, a=0, b_=1):
-    """전시형 숨쉬기 / 배회형 위아래 흔들림."""
-    return a if frame == 0 else b_
+    """위아래 흔들림. 네 프레임 동안 두 번 튄다 — 걸음마다 몸이 한 번씩 뜬다."""
+    return (a, b_, a, b_)[frame % FRAMES]
+
+
+def wig(frame, amp=1):
+    """좌우(또는 위아래)로 한 바퀴 흔들린다 — 0, +amp, 0, -amp."""
+    return (0, amp, 0, -amp)[frame % FRAMES]
+
+
+def swing(frame, a, b_):
+    """a 에서 b_ 까지 갔다가 되돌아온다. 가운데 프레임은 중간값."""
+    m = (a + b_) / 2.0
+    v = (a, m, b_, m)[frame % FRAMES]
+    return int(round(v)) if isinstance(a, int) and isinstance(b_, int) else v
+
+
+def cyc(frame, *vals):
+    """프레임마다 값을 직접 지정할 때."""
+    return vals[frame % len(vals)]
 
 
 def legs2(b, cx, g, span, frame, c1, c2, thick=3, h=8):
-    """네발 짐승 다리 2쌍 — 프레임마다 앞뒤가 바뀐다."""
-    front = cx + span if frame == 0 else cx + span - 3
-    back = cx - span if frame == 0 else cx - span + 3
-    for (x, c) in ((back, c2), (front, c1)):
-        b.rect(x - thick // 2, g - h, x + thick // 2, g, c)
-        b.rect(x - thick // 2, g - 1, x + thick // 2, g, c2)
+    """네발 짐승 다리 2쌍 — 네 프레임짜리 걸음.
+
+    0 앞다리 앞 / 1 스쳐 지나감 / 2 앞다리 뒤 / 3 스쳐 지나감.
+    """
+    sw = (3, 0, -3, 0)[frame % FRAMES]
+    front = cx + span + sw
+    back = cx - span - sw
+    lift = (0, 1, 0, 1)[frame % FRAMES]          # 스치는 프레임엔 발이 살짝 뜬다
+    for (x, c, up) in ((back, c2, lift), (front, c1, lift)):
+        b.rect(x - thick // 2, g - h, x + thick // 2, g - up, c)
+        b.rect(x - thick // 2, g - 1 - up, x + thick // 2, g - up, c2)
+
+
+#: 시트 한 장의 최대 가로 픽셀. Unity 텍스처 기본 Max Size 가 2048 이라
+#: 이보다 넓으면 임포트할 때 조용히 절반으로 줄어들어 슬라이스가 전부 어긋난다.
+SHEET_MAX_WIDTH = 2048
 
 
 def sheet_row(images, cw, ch):
-    out = Image.new("RGBA", (cw * len(images), ch), (0, 0, 0, 0))
+    """칸을 가로로 늘어놓되 2048px 를 넘기면 아래 줄로 접는다.
+
+    C# 쪽 슬라이서는 텍스처 폭에서 줄당 칸 수를 역산하므로 줄 수는 신경 쓰지 않아도 된다.
+    """
+    per_row = max(1, min(len(images), SHEET_MAX_WIDTH // cw))
+    rows = (len(images) + per_row - 1) // per_row
+    out = Image.new("RGBA", (cw * per_row, ch * rows), (0, 0, 0, 0))
     for i, im in enumerate(images):
-        out.paste(im, (i * cw, 0))
+        r, c = divmod(i, per_row)
+        out.paste(im, (c * cw, r * ch))
     return out
+
+
+def cell(sheet, index, size):
+    """줄바꿈된 시트에서 index 번째 칸을 잘라 온다."""
+    per_row = max(1, sheet.width // size)
+    r, c = divmod(index, per_row)
+    return sheet.crop((c * size, r * size, (c + 1) * size, (r + 1) * size))
 
 
 def build_sheets(entries, tag):
@@ -201,6 +252,6 @@ def build_sheets(entries, tag):
     bs = sheet_row([e[2]() for e in entries], BW, BW)
     al = []
     for e in entries:
-        al.append(e[3](0))
-        al.append(e[3](1))
+        for f in range(FRAMES):
+            al.append(e[3](f))
     return bs, sheet_row(al, AW, AW)

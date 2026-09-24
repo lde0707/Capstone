@@ -23,11 +23,13 @@ namespace DigGame
         public GameHUD Hud { get; set; }
         /// <summary>지상에 자라나는 마을 — 하루하루의 보상.</summary>
         public Village Village { get; private set; }
+        public RelicSystem Relics { get; private set; }
 
         public Vector2Int SurfaceDropCell { get; private set; }
         public Vector2Int RecycleDropCell { get; private set; }
         public RectInt BuildingRect { get; private set; }       // 처리장 (능력치 강화 포함)
         public RectInt RecycleRect { get; private set; }        // 분리수거장 부지
+        public RectInt RestorerRect { get; private set; }       // 유물 복원소 부지
 
         public readonly List<MineSite> DiscoveredMines = new List<MineSite>();
         public readonly List<Worker> Workers = new List<Worker>();
@@ -52,9 +54,12 @@ namespace DigGame
         public bool HasRecycleStation { get; private set; }
         public int RecycleLevel { get; private set; }           // 0 없음 / 1 / 2
 
+        /// <summary>유물 세트를 완성할 때마다 붙는 판매 보너스.</summary>
+        public float RelicSellBonus => Relics != null ? Relics.SetSellBonus : 0f;
+
         public float SellMultiplier =>
-            RecycleLevel >= 2 ? GameConfig.RecycleBonus2 :
-            RecycleLevel >= 1 ? GameConfig.RecycleBonus1 : 1f;
+            (RecycleLevel >= 2 ? GameConfig.RecycleBonus2 :
+             RecycleLevel >= 1 ? GameConfig.RecycleBonus1 : 1f) + RelicSellBonus;
 
         public bool ShopOpen { get; private set; }              // 낮의 간이 강화 상점
         public bool IsRunning => State == GameState.Day;
@@ -127,6 +132,11 @@ namespace DigGame
             RecycleDropCell = new Vector2Int(
                 RecycleRect.xMin + RecycleRect.width / 2, GameConfig.SurfaceRow - 1);
 
+            RestorerRect = new RectInt(
+                cx + GameConfig.RestorerOffsetX,
+                GameConfig.SurfaceRow - GameConfig.BuildingHeight,
+                GameConfig.BuildingWidth, GameConfig.BuildingHeight);
+
             var viewGo = new GameObject("WorldView");
             viewGo.transform.SetParent(transform, false);
             View = viewGo.AddComponent<WorldView>();
@@ -134,6 +144,9 @@ namespace DigGame
             View.ShowBuilding(BuildingRect);
             // 공용 투입구는 처음부터 존재하고, 구매 업그레이드는 판매 배율만 강화한다.
             View.ShowRecycleStation(RecycleRect, RecycleLevel);
+
+            Relics = gameObject.AddComponent<RelicSystem>();
+            Relics.Setup(this);
 
             Village = gameObject.AddComponent<Village>();
             Village.Build(this);
@@ -154,6 +167,8 @@ namespace DigGame
             Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
             Log($"채울 때마다 더 큰 다음 목표가 열린다 (하루 최대 {GameConfig.MaxQuotaStages}단계) — 단계마다 마을이 커진다");
             Log("할당량을 채우면 지상의 내 집이 빛나면서 커진다 — 7일이면 도시가 된다");
+            Log($"땅속 보랏빛 광점은 <b>유물</b>이다 — 캐서 오른쪽 복원소 앞에서 E " +
+                $"(유물 {RelicCatalog.Count}종 · C 키로 도감)");
         }
 
         void OnDestroy()
@@ -419,6 +434,8 @@ namespace DigGame
         {
             if (State != GameState.Night) return;
 
+            if (Relics != null) Relics.FinishAllOvernight();
+
             Day++;
             BeginDayQuota();
             TimeLeft = GameConfig.DayLengthSeconds;
@@ -463,6 +480,7 @@ namespace DigGame
         // ==================================================================
         public bool PlayerNearBuilding() => PlayerNearRect(BuildingRect);
         public bool PlayerNearRecycle() => PlayerNearRect(RecycleRect);
+        public bool PlayerNearRestorer() => PlayerNearRect(RestorerRect);
 
         bool PlayerNearRect(RectInt rect)
         {
@@ -482,6 +500,21 @@ namespace DigGame
 
         void HandleInteract()
         {
+            // 복원소와 강화소는 사정거리가 겹칠 수 있다.
+            // 맡길 유물이 있을 때만 복원소가 E를 가져가고, 없으면 강화소로 넘긴다.
+            if (PlayerNearRestorer() && Relics != null && Relics.CarriedCount > 0)
+            {
+                Relics.DepositAll();
+                return;
+            }
+            if (PlayerNearRestorer() && !PlayerNearBuilding())
+            {
+                Log(Relics != null && Relics.QueueCount > 0
+                    ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
+                    : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자");
+                return;
+            }
+
             if (PlayerNearRecycle())
             {
                 if (Player.Inventory.Count == 0)
@@ -633,6 +666,20 @@ namespace DigGame
             Log($"{source}: {string.Join(", ", products)} → +{paid:N0}원 (원물 대비 x{totalMultiplier:0.00})");
             return paid;
         }
+
+        /// <summary>
+        /// 유물에서 나온 돈. 할당량에도 반영되므로 유물 수집이 생존에 직접 보탬이 된다.
+        /// </summary>
+        public void AddRelicIncome(int amount, string what)
+        {
+            if (amount <= 0) return;
+            Money += amount;
+            DeliveredToday += amount;
+            CheckQuotaStages();
+        }
+
+        /// <summary>외부(유물 복원소 등)에서 돈을 쓸 때.</summary>
+        public bool TrySpend(int cost) => TrySpend(cost, "복원");
 
         /// <summary>새 하루의 할당량 단계를 1단계로 초기화한다.</summary>
         void BeginDayQuota()

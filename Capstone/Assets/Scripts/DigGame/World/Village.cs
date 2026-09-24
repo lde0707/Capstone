@@ -19,23 +19,43 @@ namespace DigGame
         public const int OrderFx = 49;
 
         /// <summary>
+        /// 안쪽부터 좌우로 번갈아 채워 나가는 자리표를 만든다.
+        /// 건물이 30% 작아졌으므로 간격도 그만큼 좁혀 마을이 빽빽하게 채워진다.
+        /// </summary>
+        static int[] BuildSlots(int startLeft, int startRight, int step, int count)
+        {
+            var slots = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                int pair = i / 2;
+                slots[i] = (i % 2 == 0)
+                    ? -(startLeft + pair * step)
+                    : startRight + pair * step;
+            }
+            return slots;
+        }
+
+        /// <summary>
         /// 이웃집이 들어설 자리 (중심에서의 칸 오프셋). 안쪽부터 채워진다.
-        /// 고정 시설(투입소·내 집·입구·강화소·복원소)이 차지한 -10~+13 구간 바깥에서 시작한다.
+        /// 고정 시설(투입소 -8 · 내 집 -3 · 입구 +2 · 강화소 +6 · 복원소 +10) 바깥에서 시작한다.
         /// </summary>
         static readonly int[] NeighborOffsets =
-        {
-            -12, 16, -18, 22, -24, 28, -30, 34, -36, 40,
-            -42, 46, -48, 52, -54, 58, -60, 64, -66, 70,
-            -72, 76, -78, 82
-        };
+            BuildSlots(11, 13, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
 
-        /// <summary>집과 집 사이를 채울 소품 자리.</summary>
+        /// <summary>집 앞을 채울 소품 자리 — 집보다 한 칸 앞에 서서 거리처럼 겹쳐 보인다.</summary>
         static readonly int[] PropOffsets =
-        {
-            -15, 19, -21, 25, -27, 31, -33, 37, -39, 43,
-            -45, 49, -51, 55, -57, 61, -63, 67, -69, 73,
-            -75, 79, -81, 85
-        };
+            BuildSlots(12, 14, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
+
+        /// <summary>복원된 전시형 유물이 놓일 자리.</summary>
+        static readonly int[] RelicOffsets =
+            BuildSlots(10, 15, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
+
+        /// <summary>
+        /// 세트 보너스 랜드마크 자리. 도감을 다 채운 보람이 보여야 하니
+        /// 마을 안쪽, 플레이어가 자주 지나는 구간에 놓는다.
+        /// 들어설 때 주변의 작은 집·소품은 밀어낸다.
+        /// </summary>
+        static readonly int[] LandmarkOffsets = { -18, 20, -29, 31, -40, 42 };
 
         /// <summary>
         /// 장식물이 놓이는 순서. 숫자는 시대별 장식물 시트의 인덱스다.
@@ -74,9 +94,17 @@ namespace DigGame
         readonly List<int> _propKind = new List<int>();
         readonly Dictionary<int, SpriteRenderer> _groundCover = new Dictionary<int, SpriteRenderer>();
         readonly List<Villager> _villagers = new List<Villager>();
+        readonly List<RelicUnit> _relicUnits = new List<RelicUnit>();
+        readonly List<SpriteRenderer> _landmarks = new List<SpriteRenderer>();
+        readonly HashSet<int> _landmarkGroups = new HashSet<int>();
+        /// <summary>랜드마크가 차지한 칸 구간 (x=왼쪽, y=오른쪽). 다른 건 여기에 못 들어선다.</summary>
+        readonly List<Vector2Int> _reserved = new List<Vector2Int>();
+        TownWisps _wisps;
+        int _relicSlotsUsed;
+        int _wanderingRelics;
 
         /// <summary>마을에 살 수 있는 주민 수 상한.</summary>
-        public const int MaxVillagers = 26;
+        public const int MaxVillagers = 44;
 
         /// <summary>현재 시대 (0 원시 ~ 4 미래).</summary>
         public int Era => _era;
@@ -91,6 +119,15 @@ namespace DigGame
         public bool IsFinalEra => _era >= VillageSpriteCatalog.EraCount - 1;
         public int HouseCount => _houses.Count + 1;
         public int Population => _villagers.Count;
+        /// <summary>마을에 나와 있는 복원 유물 수.</summary>
+        public int RelicCount => _relicUnits.Count;
+        public int WanderingRelicCount => _wanderingRelics;
+        /// <summary>세트 보너스로 들어선 랜드마크 수.</summary>
+        public int LandmarkCount => _landmarks.Count;
+
+        /// <summary>공룡 공원이 생기면 더 많은 유물이 동시에 돌아다닐 수 있다.</summary>
+        int MaxWandering => GameConfig.MaxWanderingRelics
+            + (_landmarkGroups.Contains((int)RelicGroup.Dino) ? GameConfig.DinoSetWanderBonus : 0);
         public int TownMinX { get; private set; }
         public int TownMaxX { get; private set; }
 
@@ -99,7 +136,7 @@ namespace DigGame
         {
             get
             {
-                int score = _era * 2 + _houses.Count;
+                int score = _era * 2 + _houses.Count + _relicUnits.Count / 2 + _landmarks.Count * 2;
                 if (score <= 1) return "허허벌판";
                 if (score <= 4) return "작은 정착지";
                 if (score <= 8) return "마을";
@@ -153,11 +190,14 @@ namespace DigGame
         static Vector3 StandOn(int gridX) =>
             new Vector3((gridX + 0.5f) * GameConfig.CellSize, SurfaceY, 0f);
 
-        SpriteRenderer Spawn(string name, Sprite sprite, Vector3 position, int order)
+        SpriteRenderer Spawn(string name, Sprite sprite, Vector3 position, int order,
+            float scale = 1f)
         {
             var go = new GameObject(name);
             go.transform.SetParent(_root, false);
             go.transform.position = position;
+            if (!Mathf.Approximately(scale, 1f))
+                go.transform.localScale = Vector3.one * scale;
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = sprite;
             sr.sortingOrder = order;
@@ -203,7 +243,7 @@ namespace DigGame
         const int HomeOffset = -3;
 
         /// <summary>복원소가 설 자리. 강화소 바깥.</summary>
-        const int RestorerOffset = 12;
+        const int RestorerOffset = GameConfig.RestorerOffsetX;
 
         /// <summary>내 집이 서 있는 칸.</summary>
         int HomeX => _centerX + HomeOffset;
@@ -211,14 +251,16 @@ namespace DigGame
         void BuildHome()
         {
             _era = 0;
-            _home = Spawn("Home", VillageSpriteCatalog.EraHouse(_era), StandOn(HomeX), OrderHouse);
+            _home = Spawn("Home", VillageSpriteCatalog.EraHouse(_era), StandOn(HomeX), OrderHouse,
+                GameConfig.BuildingScale);
             _restorer = Spawn("Restorer", VillageSpriteCatalog.EraRestorer(_era),
-                StandOn(_centerX + RestorerOffset), OrderHouse);
+                StandOn(_centerX + RestorerOffset), OrderHouse, GameConfig.BuildingScale);
             _restorerSign = Spawn("RestorerSign",
                 VillageSpriteCatalog.Sign(VillageSpriteCatalog.SignKind.Restorer, _era),
                 StandOn(_centerX + RestorerOffset)
-                    + Vector3.up * (VillageSpriteCatalog.SignLift * GameConfig.CellSize),
-                OrderVillager + 5);
+                    + Vector3.up * (VillageSpriteCatalog.SignLift
+                                    * GameConfig.BuildingScale * GameConfig.CellSize),
+                OrderVillager + 5, GameConfig.BuildingScale);
         }
 
         /// <summary>
@@ -244,17 +286,15 @@ namespace DigGame
                     _game.Log($"할당량 달성! {EraName} 시대의 마을이 한 뼘 넓어졌다 ({StageName})");
                 }
 
-                AddNeighborHouse();
-                AddProp();
+                AddNeighborHouses(GameConfig.HousesPerFirstStage);
+                AddProps(GameConfig.HousesPerFirstStage);
                 AddVillagers(2);
             }
             else
             {
                 // 집은 그대로, 대신 소문을 듣고 이웃이 몰려온다.
-                AddNeighborHouse();
-                AddNeighborHouse();
-                AddProp();
-                AddProp();
+                AddNeighborHouses(GameConfig.HousesPerStage);
+                AddProps(GameConfig.HousesPerStage);
                 AddVillagers(3);
                 _game.Log($"{stage}단계 달성 — 소문을 듣고 이웃이 몰려왔다! " +
                     $"집 {HouseCount}채 · 주민 {Population}명 · 지금은 '{StageName}'");
@@ -266,9 +306,8 @@ namespace DigGame
         /// <summary>새 아침 — 소문을 듣고 이웃과 주민이 더 들어온다.</summary>
         public void OnNewDay(int day)
         {
-            AddNeighborHouse();
-            AddProp();
-            AddProp();
+            AddNeighborHouses(GameConfig.HousesPerNewDay);
+            AddProps(GameConfig.HousesPerNewDay);
             AddVillagers(2);
             UpdateRoad();
 
@@ -353,6 +392,10 @@ namespace DigGame
                 if (_props[i] != null) _props[i].color = color;
             for (int i = 0; i < _villagers.Count; i++)
                 if (_villagers[i] != null) _villagers[i].Flash(color);
+            for (int i = 0; i < _relicUnits.Count; i++)
+                if (_relicUnits[i] != null) _relicUnits[i].Flash(color);
+            for (int i = 0; i < _landmarks.Count; i++)
+                if (_landmarks[i] != null) _landmarks[i].color = color;
             if (_game != null && _game.View != null) _game.View.FlashVillageBuildings(color);
         }
 
@@ -388,12 +431,27 @@ namespace DigGame
         public static string HouseName(int era) => VillageSpriteCatalog.EraHouseName(era);
 
         // ------------------------------------------------------------------
+        void AddNeighborHouses(int count)
+        {
+            for (int i = 0; i < count; i++) AddNeighborHouse();
+        }
+
+        void AddProps(int count)
+        {
+            for (int i = 0; i < count; i++) AddProp();
+        }
+
         void AddNeighborHouse()
         {
-            if (_neighborsBuilt >= NeighborOffsets.Length) return;
-
-            int offset = NeighborOffsets[_neighborsBuilt++];
-            int x = _centerX + offset;
+            // 랜드마크가 차지한 자리는 건너뛴다.
+            int x = 0;
+            bool found = false;
+            while (_neighborsBuilt < NeighborOffsets.Length)
+            {
+                x = _centerX + NeighborOffsets[_neighborsBuilt++];
+                if (!SlotBlocked(x)) { found = true; break; }
+            }
+            if (!found) return;
             if (!_grid.InBounds(x, GameConfig.SurfaceRow)) return;
 
             // 마을이 한 시대로 딱 떨어지면 심심하니 일부는 한 시대 뒤처진 집으로 둔다.
@@ -401,30 +459,35 @@ namespace DigGame
             int kind = RollBuildingKind();
 
             var sr = Spawn($"House({x})",
-                VillageSpriteCatalog.EraBuilding(_era - lag, kind), StandOn(x), OrderHouse);
+                VillageSpriteCatalog.EraBuilding(_era - lag, kind), StandOn(x), OrderHouse,
+                GameConfig.BuildingScale);
             _houses.Add(sr);
             _houseLag.Add(lag);
             _houseKind.Add(kind);
             VillageUpgradeFx.Play(_root, StandOn(x), 2.2f * GameConfig.CellSize);
 
-            TownMinX = Mathf.Min(TownMinX, x - 3);
-            TownMaxX = Mathf.Max(TownMaxX, x + 3);
+            TownMinX = Mathf.Min(TownMinX, x - 2);
+            TownMaxX = Mathf.Max(TownMaxX, x + 2);
             PaintGroundCover(TownMinX - 3, TownMaxX + 3);
         }
 
         void AddProp()
         {
-            if (_propsBuilt >= PropOffsets.Length) return;
-
-            int offset = PropOffsets[_propsBuilt];
-            int kind = PropCycle[_propsBuilt % PropCycle.Length];
-            _propsBuilt++;
-
-            int x = _centerX + offset;
+            int x = 0, kind = 0;
+            bool found = false;
+            while (_propsBuilt < PropOffsets.Length)
+            {
+                x = _centerX + PropOffsets[_propsBuilt];
+                kind = PropCycle[_propsBuilt % PropCycle.Length];
+                _propsBuilt++;
+                if (!SlotBlocked(x)) { found = true; break; }
+            }
+            if (!found) return;
             if (!_grid.InBounds(x, GameConfig.SurfaceRow)) return;
 
             var sr = Spawn($"Prop#{kind}({x})",
-                VillageSpriteCatalog.EraProp(_era, kind), StandOn(x), OrderProp);
+                VillageSpriteCatalog.EraProp(_era, kind), StandOn(x), OrderProp,
+                GameConfig.BuildingScale);
             _props.Add(sr);
             _propKind.Add(kind);
 
@@ -478,6 +541,230 @@ namespace DigGame
 
             int r = _rng.Next(0, kinds - 1);      // 꼬마 자리를 건너뛴다
             return r >= kid ? r + 1 : r;
+        }
+
+        // ------------------------------------------------------------------
+        /// <summary>
+        /// 복원을 마친 유물을 마을에 내놓는다.
+        /// 배회형은 살아나서 돌아다니고(동시 상한을 넘으면 전시로 돌린다),
+        /// 전시형은 자기 자리에 좌대째 놓인다.
+        /// </summary>
+        /// <returns>돌아다니기 시작했으면 true.</returns>
+        public bool PlaceRestoredRelic(RelicDef def)
+        {
+            if (def == null) return false;
+
+            bool wander = def.Behavior == RelicBehavior.Wander
+                && _wanderingRelics < MaxWandering;
+
+            int x = wander ? PickStandCell() : NextRelicSlot();
+            Vector3 at = StandOn(x);
+
+            var go = new GameObject($"Relic({def.Name})");
+            go.transform.SetParent(_root, false);
+            var unit = go.AddComponent<RelicUnit>();
+            unit.Init(this, def, at, wander);
+
+            _relicUnits.Add(unit);
+            if (wander) _wanderingRelics++;
+            else
+            {
+                TownMinX = Mathf.Min(TownMinX, x - 2);
+                TownMaxX = Mathf.Max(TownMaxX, x + 2);
+                PaintGroundCover(TownMinX - 3, TownMaxX + 3);
+                UpdateRoad();
+            }
+
+            VillageUpgradeFx.Play(_root, at, 2.6f * GameConfig.CellSize);
+            return wander;
+        }
+
+        // ------------------------------------------------------------------
+        /// <summary>
+        /// 유물 한 분류를 전부 복원했을 때 들어서는 랜드마크.
+        /// 자리를 넓게 쓰므로 주변의 작은 집·소품·전시 유물은 밀어낸다.
+        /// </summary>
+        public void PlaceSetLandmark(RelicGroup group)
+        {
+            int g = (int)group;
+            if (!_landmarkGroups.Add(g)) return;
+
+            int slot = _landmarkGroups.Count - 1;
+            int x = _centerX + LandmarkOffsets[slot % LandmarkOffsets.Length];
+            // 먼저 자리를 예약해야 밀어낸 것들이 도로 들어오지 않는다.
+            _reserved.Add(new Vector2Int(x - 4, x + 4));
+            ClearAround(x, 4);
+
+            var sr = Spawn($"Landmark({VillageSpriteCatalog.SetLandmarkNames[g]})",
+                VillageSpriteCatalog.SetLandmark(g), StandOn(x),
+                OrderHouse + 2, GameConfig.LandmarkScale);
+            _landmarks.Add(sr);
+
+            TownMinX = Mathf.Min(TownMinX, x - 4);
+            TownMaxX = Mathf.Max(TownMaxX, x + 4);
+            PaintGroundCover(TownMinX - 3, TownMaxX + 3);
+            UpdateRoad();
+
+            VillageUpgradeFx.Play(_root, StandOn(x), 6f * GameConfig.CellSize);
+
+            // 분류마다 마을에 남는 흔적이 다르다.
+            if (group == RelicGroup.Yokai) SpawnWisps();
+            else if (group == RelicGroup.Mystery) PromoteResidentUfo();
+            else if (group == RelicGroup.Dino) WakeWanderers();
+        }
+
+        /// <summary>랜드마크가 설 자리를 비운다 — 있던 집·소품·전시 유물을 치운다.</summary>
+        void ClearAround(int centerX, int radius)
+        {
+            float minX = (centerX - radius + 0.5f) * GameConfig.CellSize;
+            float maxX = (centerX + radius + 0.5f) * GameConfig.CellSize;
+
+            RemoveWhere(_houses, minX, maxX, _houseLag, _houseKind);
+            RemoveWhere(_props, minX, maxX, _propKind, null);
+
+            for (int i = _relicUnits.Count - 1; i >= 0; i--)
+            {
+                var unit = _relicUnits[i];
+                if (unit == null) { _relicUnits.RemoveAt(i); continue; }
+                if (unit.Wandering) continue;               // 돌아다니는 애들은 알아서 비켜 간다
+                float ux = unit.transform.position.x;
+                if (ux < minX || ux > maxX) continue;
+
+                // 전시 유물은 지우지 않고 다른 빈자리로 옮겨 준다.
+                unit.transform.position = StandOn(NextRelicSlot());
+            }
+        }
+
+        static void RemoveWhere(List<SpriteRenderer> list, float minX, float maxX,
+            List<int> sideA, List<int> sideB)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var sr = list[i];
+                bool gone = sr == null;
+                if (!gone)
+                {
+                    float x = sr.transform.position.x;
+                    if (x < minX || x > maxX) continue;
+                    Destroy(sr.gameObject);
+                }
+                list.RemoveAt(i);
+                if (sideA != null && i < sideA.Count) sideA.RemoveAt(i);
+                if (sideB != null && i < sideB.Count) sideB.RemoveAt(i);
+            }
+        }
+
+        /// <summary>
+        /// 배회 상한이 늘어났을 때, 자리가 없어 전시로 밀려 있던 배회형 유물을 다시 깨운다.
+        /// (공룡 공원이 서면 우리 안 공룡들이 일어나 걸어 다니기 시작한다)
+        /// </summary>
+        public void WakeWanderers()
+        {
+            int woke = 0;
+            for (int i = 0; i < _relicUnits.Count; i++)
+            {
+                if (_wanderingRelics >= MaxWandering) break;
+
+                var unit = _relicUnits[i];
+                if (unit == null || unit.Wandering) continue;
+                var def = unit.Def;
+                if (def == null || def.Behavior != RelicBehavior.Wander) continue;
+
+                Vector3 at = StandOn(PickStandCell());
+                Destroy(unit.gameObject);
+
+                var go = new GameObject($"Relic({def.Name})");
+                go.transform.SetParent(_root, false);
+                var fresh = go.AddComponent<RelicUnit>();
+                fresh.Init(this, def, at, true);
+                _relicUnits[i] = fresh;
+                _wanderingRelics++;
+                woke++;
+            }
+            if (woke > 0 && _game != null)
+                _game.Log($"   전시돼 있던 유물 {woke}마리가 깨어나 마을을 돌아다니기 시작했다");
+        }
+
+        /// <summary>요괴 마을 — 밤마다 마을을 떠다니는 도깨비불.</summary>
+        void SpawnWisps()
+        {
+            if (_wisps != null) return;
+            var go = new GameObject("TownWisps");
+            _wisps = go.AddComponent<TownWisps>();
+            _wisps.Setup(this, _root, GameConfig.YokaiSetWispCount);
+        }
+
+        /// <summary>
+        /// 미확인 구역 — 이미 마을에 전시돼 있던 UFO 를 하늘로 띄워 상주시킨다.
+        /// 새로 만들면 같은 유물이 둘이 되므로 반드시 기존 개체를 바꿔 끼운다.
+        /// </summary>
+        void PromoteResidentUfo()
+        {
+            var ufo = FindRelic(RelicGroup.Mystery, "UFO");
+            if (ufo == null) return;
+
+            int index = -1;
+            for (int i = 0; i < _relicUnits.Count; i++)
+            {
+                var u = _relicUnits[i];
+                if (u != null && u.Def == ufo) { index = i; break; }
+            }
+
+            Vector3 at = StandOn(_centerX);
+            if (index >= 0)
+            {
+                var old = _relicUnits[index];
+                at = new Vector3(old.transform.position.x, SurfaceY, 0f);
+                if (old.Wandering) _wanderingRelics = Mathf.Max(0, _wanderingRelics - 1);
+                Destroy(old.gameObject);
+            }
+
+            var go = new GameObject("ResidentUFO");
+            go.transform.SetParent(_root, false);
+            var unit = go.AddComponent<RelicUnit>();
+            unit.Init(this, ufo, at, true, true, GameConfig.RelicAliveScale * 1.35f);
+            _wanderingRelics++;
+
+            if (index >= 0) _relicUnits[index] = unit;
+            else _relicUnits.Add(unit);
+        }
+
+        static RelicDef FindRelic(RelicGroup group, string name)
+        {
+            var defs = RelicCatalog.OfGroup(group);
+            for (int i = 0; i < defs.Count; i++)
+                if (defs[i].Name == name) return defs[i];
+            return defs.Count > 0 ? defs[defs.Count - 1] : null;
+        }
+
+        /// <summary>랜드마크가 차지한 자리인가.</summary>
+        bool SlotBlocked(int gridX)
+        {
+            for (int i = 0; i < _reserved.Count; i++)
+                if (gridX >= _reserved[i].x && gridX <= _reserved[i].y) return true;
+            return false;
+        }
+
+        /// <summary>전시형 유물이 놓일 다음 자리. 자리가 다 차면 안쪽부터 다시 쓴다.</summary>
+        int NextRelicSlot()
+        {
+            for (int tries = 0; tries < RelicOffsets.Length; tries++)
+            {
+                int offset = RelicOffsets[_relicSlotsUsed % RelicOffsets.Length];
+                _relicSlotsUsed++;
+                int x = _centerX + offset;
+                if (SlotBlocked(x)) continue;
+                if (_grid != null && _grid.InBounds(x, GameConfig.SurfaceRow) && CanStandOn(x))
+                    return x;
+            }
+            // 전부 막혔으면 랜드마크 바깥쪽 끝자리로 밀어낸다.
+            for (int i = 0; i < RelicOffsets.Length; i++)
+            {
+                int x = _centerX + RelicOffsets[RelicOffsets.Length - 1 - i];
+                if (!SlotBlocked(x) && _grid != null && _grid.InBounds(x, GameConfig.SurfaceRow))
+                    return x;
+            }
+            return _centerX + RelicOffsets[0];
         }
 
         /// <summary>주민이 돌아다닐 수 있는 지상 x 범위 (월드 좌표).</summary>
