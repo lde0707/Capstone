@@ -383,32 +383,54 @@ namespace DigGame
                     $"<b>힘 우위</b> — 굴착 속도 +{digSpeedBonus}%", _label);
             }
 
+            // 시설이 붙어 있어 사정거리가 겹친다 — 안내는 HandleInteract 의 우선순위와
+            // 똑같은 순서로 골라야 "E 눌렀더니 딴 게 열리는" 일이 없다.
             var relics = _game.Relics;
-            if (!_game.ShopOpen && _game.PlayerNearRestorer() && relics != null)
+            if (!_game.ShopOpen)
             {
-                var hr = new Rect(Screen.width * 0.5f - 210, 26, 420, 30);
-                Fill(hr, new Color(0.16f, 0.08f, 0.26f, 0.90f));
-                string text = relics.CarriedCount > 0
-                    ? $"[E] 유물 {relics.CarriedCount}개 복원 맡기기 · 비용 {relics.CarriedRestoreCost:N0}원"
-                    : relics.QueueCount > 0
-                        ? $"복원소 · 지금 {relics.QueueCount}개 복원 중"
-                        : "복원소 · 맡길 유물이 없다";
-                GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
-            }
-            else if (!_game.ShopOpen && _game.PlayerNearRecycle())
-            {
-                var hr = new Rect(Screen.width * 0.5f - 190, 26, 380, 30);
-                Fill(hr, new Color(0.06f, 0.22f, 0.10f, 0.88f));
-                string text = p.Inventory.Count > 0
-                    ? $"[E] {p.Inventory.Count}개 재활용 · 예상 {_game.EstimateRecycledValue(p.Inventory):N0}원"
-                    : "[E] 분리수거장 · 가방이 비어 있음";
-                GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
-            }
-            else if (!_game.ShopOpen && _game.PlayerNearBuilding())
-            {
-                var hr = new Rect(Screen.width * 0.5f - 130, 26, 260, 30);
-                Fill(hr, new Color(0.10f, 0.14f, 0.08f, 0.82f));
-                GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), "[E] 강화 (간이 상점)", _label);
+                bool nearRestorer = _game.PlayerNearRestorer();
+                bool nearRecycle = _game.PlayerNearRecycle();
+                bool nearShop = _game.PlayerNearBuilding();
+
+                string text = null;
+                Color tint = default;
+
+                if (nearRestorer && relics != null && relics.CanDepositNow)
+                {
+                    text = $"[E] 유물 {relics.CarriedCount}개 복원 맡기기 · 비용 {relics.CarriedRestoreCost:N0}원";
+                    tint = new Color(0.16f, 0.08f, 0.26f, 0.90f);
+                }
+                else if (nearRecycle && p.Inventory.Count > 0)
+                {
+                    text = $"[E] {p.Inventory.Count}개 재활용 · 예상 {_game.EstimateRecycledValue(p.Inventory):N0}원";
+                    tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
+                }
+                else if (nearShop)
+                {
+                    text = "[E] 강화 (간이 상점)";
+                    tint = new Color(0.10f, 0.14f, 0.08f, 0.82f);
+                }
+                else if (nearRestorer)
+                {
+                    text = relics != null && relics.CarriedCount > 0
+                        ? $"복원소 · 돈이 모자라다 (가장 싼 것 {relics.CheapestRestoreCost:N0}원)"
+                        : relics != null && relics.QueueCount > 0
+                            ? $"복원소 · 지금 {relics.QueueCount}개 복원 중"
+                            : "복원소 · 맡길 유물이 없다";
+                    tint = new Color(0.16f, 0.08f, 0.26f, 0.90f);
+                }
+                else if (nearRecycle)
+                {
+                    text = "투입소 · 가방이 비어 있음";
+                    tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
+                }
+
+                if (text != null)
+                {
+                    var hr = new Rect(Screen.width * 0.5f - 210, 26, 420, 30);
+                    Fill(hr, tint);
+                    GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
+                }
             }
 
             var mine = p.MineHere();
@@ -947,7 +969,7 @@ namespace DigGame
                 "파랑: 푸석한 흙 · 금색: 고가품이 든 압축 폐기물층",
                 "연두: 매립 가스층 — 방호복이 있으면 피해를 막는다",
                 "힘이 땅의 요구치보다 높으면 단계마다 굴착 속도 +35%",
-                "초록 잔디 지반은 파괴 불가 · 스폰 오른쪽 2칸의 입구 이용",
+                "초록 잔디 지반은 파괴 불가 · 스폰 바로 오른쪽 통로로 지하에 들어간다",
                 "도시광산 E: 보관/회수 · H 20초 자동 재활용 · J 대량 운반",
                 "보랏빛 광점 — 유물. 캐서 복원소(세 시설 중 가장 왼쪽) 앞에서 E",
                 "C — 유물 도감 (한 분류를 다 모으면 판매액 세트 보너스)",

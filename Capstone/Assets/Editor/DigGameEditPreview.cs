@@ -596,7 +596,7 @@ namespace DigGame.Editor
                 throw new System.InvalidOperationException("초록 잔디 지반 또는 입구 통로 픽셀을 생성하지 못했습니다.");
 
             Debug.Log($"[DigGame] 지상 잔디 — 파괴 불가 {GameConfig.GrassLayerRows}칸 · " +
-                $"스폰 오른쪽 {GameConfig.SurfaceEntranceOffsetX}칸 세로 입구 검증 완료");
+                $"마을 중심 +{GameConfig.SurfaceEntranceOffsetX}칸 세로 입구 검증 완료");
         }
 
         static void ValidateDayTiming()

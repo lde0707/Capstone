@@ -150,6 +150,13 @@ namespace DigGame
             return accepted;
         }
 
+        /// <summary>
+        /// 지금 복원소에 맡길 수 있는가 — 들고 있고, 최소 한 개는 살 돈이 있어야 한다.
+        /// 돈이 모자라면 E 를 붙잡지 않고 강화소 쪽으로 넘겨야 한다.
+        /// </summary>
+        public bool CanDepositNow =>
+            _carried.Count > 0 && _game != null && _game.Money >= CheapestRestoreCost;
+
         /// <summary>지금 지고 있는 것 중 가장 싼 복원 비용.</summary>
         public int CheapestRestoreCost
         {

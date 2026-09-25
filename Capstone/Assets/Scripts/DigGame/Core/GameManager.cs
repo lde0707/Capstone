@@ -163,7 +163,8 @@ namespace DigGame
             Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 지상 입구 아래 쓰레기부터 수거하자!");
             Log("쓰레기는 스폰 바로 왼쪽 투입소 앞에서 E를 눌러 버린다");
             Log("스폰 왼쪽에 투입소 → 강화소 → 복원소 → 내 집 순으로 붙어 있다");
-            Log($"잔디 지반은 팔 수 없다 · 스폰 오른쪽 {GameConfig.SurfaceEntranceOffsetX}칸의 통로로 지하에 들어가자");
+            Log($"잔디 지반은 팔 수 없다 · 스폰 오른쪽 " +
+                $"{WorldGenerator.SurfaceEntranceX(Grid) - SurfaceDropCell.x}칸의 통로로 지하에 들어가자");
             Log($"할당량 달성 보너스 +{QuotaCompletionBonus:N0}원 · 미달 시 부족액의 x{GameConfig.QuotaShortfallPenaltyMultiplier:0.00} 긴급 정산");
             Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
             Log($"채울 때마다 더 큰 다음 목표가 열린다 (하루 최대 {GameConfig.MaxQuotaStages}단계) — 단계마다 마을이 커진다");
@@ -509,7 +510,8 @@ namespace DigGame
             bool nearShop = PlayerNearBuilding();
 
             // 1) 할 일이 있는 시설 순서대로
-            if (nearRestorer && Relics != null && Relics.CarriedCount > 0)
+            // 돈이 모자라 한 개도 못 맡기면 E 를 붙잡지 않는다 (강화소가 열려야 돈을 번다).
+            if (nearRestorer && Relics != null && Relics.CanDepositNow)
             {
                 Relics.DepositAll();
                 return;
@@ -537,9 +539,11 @@ namespace DigGame
             // 3) 할 일이 없을 때의 안내
             if (nearRestorer)
             {
-                Log(Relics != null && Relics.QueueCount > 0
-                    ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
-                    : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자");
+                Log(Relics == null || Relics.CarriedCount == 0
+                    ? (Relics != null && Relics.QueueCount > 0
+                        ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
+                        : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자")
+                    : $"복원 비용이 모자라다 (가장 싼 것 {Relics.CheapestRestoreCost:N0}원 / 보유 {Money:N0}원)");
                 return;
             }
             if (nearRecycle)

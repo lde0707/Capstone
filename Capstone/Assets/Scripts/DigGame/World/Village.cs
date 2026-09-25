@@ -14,6 +14,11 @@ namespace DigGame
     {
         public const int OrderGroundCover = 3;
         public const int OrderHouse = 8;
+        /// <summary>
+        /// 고정 시설(내 집·복원소)은 투입소·강화소(WorldView.OrderMine)와 같은 층에 둔다.
+        /// 안 그러면 같은 줄에 선 건물인데 주민이 어떤 건 가리고 어떤 건 안 가린다.
+        /// </summary>
+        public const int OrderFacility = 46;
         public const int OrderProp = 10;
         public const int OrderVillager = 20;
         public const int OrderFx = 49;
@@ -248,10 +253,10 @@ namespace DigGame
         void BuildHome()
         {
             _era = 0;
-            _home = Spawn("Home", VillageSpriteCatalog.EraHouse(_era), StandOn(HomeX), OrderHouse,
+            _home = Spawn("Home", VillageSpriteCatalog.EraHouse(_era), StandOn(HomeX), OrderFacility,
                 GameConfig.BuildingScale);
             _restorer = Spawn("Restorer", VillageSpriteCatalog.EraRestorer(_era),
-                StandOn(_centerX + RestorerOffset), OrderHouse, GameConfig.BuildingScale);
+                StandOn(_centerX + RestorerOffset), OrderFacility, GameConfig.BuildingScale);
             _restorerSign = Spawn("RestorerSign",
                 VillageSpriteCatalog.Sign(VillageSpriteCatalog.SignKind.Restorer, _era),
                 StandOn(_centerX + RestorerOffset)
@@ -784,20 +789,46 @@ namespace DigGame
             CanStandOn(Mathf.FloorToInt(worldX / GameConfig.CellSize));
 
         /// <summary>주민을 세울 만한 땅 한 칸을 고른다 (구덩이 위는 피한다).</summary>
+        /// <summary>
+        /// 주민·배회 유물을 세울 칸.
+        /// <b>반드시 산책 범위(TownMinX~TownMaxX) 안에서 골라야 한다.</b> 밖에 세우면
+        /// Villager/RelicUnit 이 걷기 시작하는 첫 프레임에 경계로 순간이동해 한 점에 쌓인다.
+        /// 그 안에서 고정 시설 구간과 랜드마크 예약 자리는 피한다.
+        /// </summary>
         int PickStandCell()
         {
-            for (int tries = 0; tries < 32; tries++)
+            int min = TownMinX, max = TownMaxX;
+            if (max < min) max = min;
+
+            for (int tries = 0; tries < 64; tries++)
             {
-                int x = _centerX + _rng.Next(-10, 11);
-                if (CanStandOn(x)) return x;
+                int x = _rng.Next(min, max + 1);
+                if (Standable(x)) return x;
             }
-            for (int d = 0; d < 24; d++)
+            // 무작위로 못 찾으면 시설 구간 바깥으로 한 칸씩 넓혀 가며 찾는다.
+            for (int d = 0; d <= max - min; d++)
             {
-                if (CanStandOn(_centerX - d)) return _centerX - d;
-                if (CanStandOn(_centerX + d)) return _centerX + d;
+                int right = _centerX + FacilityBandMax + 1 + d;
+                if (right <= max && Standable(right)) return right;
+                int left = _centerX + FacilityBandMin - 1 - d;
+                if (left >= min && Standable(left)) return left;
             }
-            return _centerX;
+            return Mathf.Clamp(_centerX + FacilityBandMax + 1, min, max);
         }
+
+        /// <summary>그 칸에 사람을 세워도 되는가 (땅이 멀쩡하고, 시설·랜드마크가 없는 자리).</summary>
+        bool Standable(int gridX) =>
+            CanStandOn(gridX) && !InFacilityBand(gridX) && !SlotBlocked(gridX);
+
+        /// <summary>고정 시설과 지하 입구가 차지한 칸 구간 (중심 기준).</summary>
+        const int FacilityBandMin = HomeOffset - 1;                       // 내 집 왼쪽 끝
+        const int FacilityBandMax = GameConfig.SurfaceEntranceOffsetX
+                                    + GameConfig.MaxEntranceWidenLevel;   // 입구 최대 확장 오른쪽 끝
+
+        static bool InFacilityBandOffset(int offset) =>
+            offset >= FacilityBandMin && offset <= FacilityBandMax;
+
+        bool InFacilityBand(int gridX) => InFacilityBandOffset(gridX - _centerX);
     }
 
     /// <summary>집이 업그레이드될 때 터지는 빛기둥과 반짝이.</summary>
