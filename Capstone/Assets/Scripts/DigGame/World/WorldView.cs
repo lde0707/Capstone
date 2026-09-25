@@ -36,6 +36,7 @@ namespace DigGame
         readonly Dictionary<Vector2Int, GameObject> _treasureMarkers = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<Vector2Int, GameObject> _relicMarkers = new Dictionary<Vector2Int, GameObject>();
         TileBase _relicHintTile;
+        readonly Dictionary<int, TileBase> _shaftTiles = new Dictionary<int, TileBase>();
         readonly Dictionary<int, GameObject> _mineMarkers = new Dictionary<int, GameObject>();
 
         Transform _markerRoot;
@@ -99,6 +100,8 @@ namespace DigGame
                 DestroyGenerated(tile);
             DestroyGenerated(_relicHintTile);
             _relicHintTile = null;
+            foreach (var tile in _shaftTiles.Values) DestroyGenerated(tile);
+            _shaftTiles.Clear();
             _flatTiles.Clear();
             _terrainTiles.Clear();
             _passageTiles.Clear();
@@ -205,6 +208,10 @@ namespace DigGame
 
             if (kind == TileKind.Empty)
             {
+                // 잔디층에 뚫린 빈 칸은 지하 입구뿐이다 (잔디는 팔 수 없다).
+                // 구멍이 아니라 동바리를 댄 갱도로 그린다.
+                if (IsEntranceShaft(x, y)) return ShaftTile(x, y);
+
                 TileKind originalGround = _grid.OriginalGroundAt(x, y);
                 if (!TileInfo.SupportsPassage(originalGround)) return null;
                 int passagePattern = PositiveMod(x, 2) + PositiveMod(y, 2) * 2;
@@ -213,6 +220,60 @@ namespace DigGame
 
             int pattern = PositiveMod(x, 4) + PositiveMod(y, 4) * 4;
             return _terrainTiles.TryGetValue(kind, out var set) ? set[pattern] : null;
+        }
+
+        /// <summary>잔디층을 관통하는 지하 입구 칸인가.</summary>
+        bool IsEntranceShaft(int x, int y)
+        {
+            if (y < GameConfig.SurfaceRow ||
+                y >= GameConfig.SurfaceRow + GameConfig.GrassLayerRows) return false;
+            return _grid.Get(x, y) == TileKind.Empty;
+        }
+
+        /// <summary>
+        /// 입구 갱도 타일. 위치에 따라 입구/몸통/바닥, 왼쪽/가운데/오른쪽을 고른다.
+        /// 사다리는 통로 전체에서 한 칸에만 들어간다.
+        /// </summary>
+        TileBase ShaftTile(int x, int y)
+        {
+            int depth = y - GameConfig.SurfaceRow;
+            var row = depth == 0
+                ? EnvironmentSpriteCatalog.ShaftRow.Mouth
+                : depth >= GameConfig.GrassLayerRows - 1
+                    ? EnvironmentSpriteCatalog.ShaftRow.Floor
+                    : EnvironmentSpriteCatalog.ShaftRow.Body;
+
+            bool openLeft = IsEntranceShaft(x - 1, y);
+            bool openRight = IsEntranceShaft(x + 1, y);
+
+            EnvironmentSpriteCatalog.ShaftCol col;
+            if (!openLeft && !openRight) col = EnvironmentSpriteCatalog.ShaftCol.Single;
+            else if (!openLeft) col = EnvironmentSpriteCatalog.ShaftCol.Left;
+            else if (!openRight) col = EnvironmentSpriteCatalog.ShaftCol.Right;
+            else col = IsShaftCenter(x, y)
+                ? EnvironmentSpriteCatalog.ShaftCol.LadderMid
+                : EnvironmentSpriteCatalog.ShaftCol.Mid;
+
+            int key = (int)row * 8 + (int)col;
+            if (_shaftTiles.TryGetValue(key, out var cached)) return cached;
+
+            var sprite = EnvironmentSpriteCatalog.EntrancePassage(row, col);
+            if (sprite == null) return null;
+
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = sprite;
+            _shaftTiles[key] = tile;
+            return tile;
+        }
+
+        /// <summary>그 줄의 통로 한가운데인가 — 사다리는 여기 한 칸에만 놓는다.</summary>
+        bool IsShaftCenter(int x, int y)
+        {
+            int left = x, right = x;
+            while (IsEntranceShaft(left - 1, y)) left--;
+            while (IsEntranceShaft(right + 1, y)) right++;
+            return x == (left + right) / 2;
         }
 
         static int PositiveMod(int value, int divisor)

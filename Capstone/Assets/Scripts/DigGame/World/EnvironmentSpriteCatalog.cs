@@ -21,11 +21,43 @@ namespace DigGame
         static readonly Dictionary<TileKind, Texture2D> GroundAtlases = new Dictionary<TileKind, Texture2D>();
         static readonly Dictionary<TileKind, Texture2D> PassageAtlases = new Dictionary<TileKind, Texture2D>();
         static readonly Dictionary<int, Sprite> CaveBackdrops = new Dictionary<int, Sprite>();
+        static Sprite[] _entrancePassage;
         static readonly Dictionary<int, Sprite> RecycleItems = new Dictionary<int, Sprite>();
         static readonly Dictionary<MaterialKind, Sprite> RecycledProducts = new Dictionary<MaterialKind, Sprite>();
 
         static Sprite _recyclerFactory;
         static Sprite _surfaceBin;
+
+        // ---------------- 지하 입구 통로 ----------------
+        /// <summary>입구 통로 시트의 행 (위에서부터).</summary>
+        public enum ShaftRow { Mouth = 0, Body = 1, Floor = 2 }
+
+        /// <summary>
+        /// 입구 통로 시트의 열.
+        /// 사다리는 <see cref="Single"/> 과 <see cref="LadderMid"/> 에만 들어 있다 —
+        /// 넓어진 입구의 모든 칸에 사다리를 깔면 사다리 벽처럼 보인다.
+        /// </summary>
+        public enum ShaftCol { Left = 0, Mid = 1, Right = 2, Single = 3, LadderMid = 4 }
+
+        public const int ShaftCols = 5;
+        public const int ShaftRows = 3;
+
+        /// <summary>잔디층을 관통하는 갱도 타일. 나무 동바리를 댄 '사람이 판 통로'.</summary>
+        public static Sprite EntrancePassage(ShaftRow row, ShaftCol col)
+        {
+            if (_entrancePassage == null) _entrancePassage = new Sprite[ShaftRows * ShaftCols];
+            int index = (int)row * ShaftCols + (int)col;
+            if (index < 0 || index >= _entrancePassage.Length) return null;
+            if (_entrancePassage[index] != null) return _entrancePassage[index];
+
+            var texture = LoadPixelTexture("Ground/entrance_passage");
+            if (texture == null) return null;
+
+            _entrancePassage[index] = CropTopLeftGrid(texture, index, ShaftRows * ShaftCols,
+                GroundPixels, GroundPixels, GroundPixels / GameConfig.CellSize,
+                $"Entrance Passage {row}-{col}");
+            return _entrancePassage[index];
+        }
 
         public static Sprite GroundFill(int pattern) => GroundFill(TileKind.SoftDirt, pattern);
 
@@ -337,6 +369,12 @@ namespace DigGame
 
         public static void Clear()
         {
+            if (_entrancePassage != null)
+            {
+                for (int i = 0; i < _entrancePassage.Length; i++)
+                    DestroyGenerated(_entrancePassage[i]);
+                _entrancePassage = null;
+            }
             foreach (var set in GroundFills.Values)
                 for (int i = 0; i < set.Length; i++) DestroyGenerated(set[i]);
             foreach (var set in Passages.Values)
