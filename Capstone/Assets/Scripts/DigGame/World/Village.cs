@@ -124,6 +124,9 @@ namespace DigGame
         /// <summary>마을에 나와 있는 복원 유물 수.</summary>
         public int RelicCount => _relicUnits.Count;
 
+        /// <summary>마을에 나와 있는 복원 유물들 (이름표를 띄울 때 읽는다).</summary>
+        public IReadOnlyList<RelicUnit> RelicUnits => _relicUnits;
+
         /// <summary>공룡 공원이 생기면 더 많은 유물이 동시에 돌아다닐 수 있다.</summary>
         int MaxWandering => GameConfig.MaxWanderingRelics
             + (_landmarkGroups.Contains((int)RelicGroup.Dino) ? GameConfig.DinoSetWanderBonus : 0);

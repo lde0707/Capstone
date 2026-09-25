@@ -12,6 +12,12 @@ namespace DigGame
         /// <summary>우측 상단 패널 높이. 아래에 붙는 패널들이 이 값을 기준으로 내려간다.</summary>
         const float TopRightHeight = 178f;
         const float PanelW = 268f;
+        /// <summary>이 거리 안에 들어온 복원 유물은 머리 위에 이름이 뜬다.</summary>
+        const float RelicLabelRange = 4f;          // 칸
+        /// <summary>세로 거리는 덜 친다 — 머리 위를 떠다니는 공중형도 잡히게.</summary>
+        const float RelicLabelVerticalWeight = 0.6f;
+        /// <summary>한 번에 띄울 이름표 수. 넘치면 가까운 것부터.</summary>
+        const int RelicLabelMax = 4;
         const int HotbarSlotCount = 9;
         const float HotbarSlotSize = 56f;
         const float HotbarSlotGap = 4f;
@@ -19,6 +25,7 @@ namespace DigGame
         GameManager _game;
         Font _font;
         GUIStyle _label, _small, _micro, _title, _big, _center, _button, _buttonSmall, _tab, _tabOn;
+        GUIStyle _nameplate;
         Texture2D _white;
         bool _showHelp = true;
         bool _stylesReady;
@@ -121,6 +128,13 @@ namespace DigGame
             _buttonSmall = new GUIStyle(GUI.skin.button) { fontSize = 13, richText = true };
             _tab = new GUIStyle(GUI.skin.button) { fontSize = 14, richText = true };
             _tabOn = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, richText = true };
+            _nameplate = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                richText = false,
+            };
 
             if (_font != null)
             {
@@ -128,6 +142,7 @@ namespace DigGame
                 _big.font = _font; _center.font = _font;
                 _button.font = _font; _buttonSmall.font = _font;
                 _tab.font = _font; _tabOn.font = _font;
+                _nameplate.font = _font;
             }
 
             var c = new Color(0.94f, 0.94f, 0.96f);
@@ -137,6 +152,7 @@ namespace DigGame
             _title.normal.textColor = c;
             _big.normal.textColor = c;
             _center.normal.textColor = c;
+            _nameplate.normal.textColor = new Color(1f, 0.97f, 0.9f);
         }
 
         void OnGUI()
@@ -147,6 +163,7 @@ namespace DigGame
             switch (_game.State)
             {
                 case GameState.Day:
+                    DrawRelicNames();
                     DrawStatsPanel();
                     DrawTopRight();
                     DrawContext();
@@ -1124,6 +1141,110 @@ namespace DigGame
                 $"{_game.Day}일차 · 최종 보유금 {_game.Money:N0}원", _center);
             GUI.Label(new Rect(0, y + 132, Screen.width, 30), "[R] 다시 시작", _center);
         }
+
+        // ==================================================================
+        // 가까이 간 복원 유물의 이름표
+        // ==================================================================
+        void DrawRelicNames()
+        {
+            if (_showCodex || _game.ShopOpen) return;
+
+            var village = _game.Village;
+            var player = _game.Player;
+            if (village == null || player == null) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+
+            var units = village.RelicUnits;
+            if (units == null || units.Count == 0) return;
+
+            Vector3 eye = player.transform.position;
+            float range = RelicLabelRange * GameConfig.CellSize;
+
+            // OnGUI 는 한 프레임에 여러 번 돈다. 정렬 델리게이트를 새로 만들지 않도록
+            // 가까운 순서로 직접 끼워 넣고, 목록은 RelicLabelMax 개로 잘라 둔다.
+            _nearbyRelics.Clear();
+            for (int i = 0; i < units.Count; i++)
+            {
+                var unit = units[i];
+                if (unit == null || !unit.HasArt) continue;
+
+                Vector3 at = unit.transform.position;
+                float dx = at.x - eye.x;
+                float dy = (at.y - eye.y) * RelicLabelVerticalWeight;
+                float distance = Mathf.Sqrt(dx * dx + dy * dy);
+                if (distance > range) continue;
+
+                if (_nearbyRelics.Count >= RelicLabelMax &&
+                    distance >= _nearbyRelics[_nearbyRelics.Count - 1].Distance) continue;
+
+                var plate = new Nameplate
+                {
+                    Text = unit.DisplayName,
+                    World = new Vector3(at.x, unit.LabelWorldY, 0f),
+                    Distance = distance,
+                    // 경계에서 툭 나타나지 않도록 가장자리 35% 구간에서 서서히 뜬다
+                    Alpha = Mathf.Clamp01((range - distance) / Mathf.Max(0.01f, range * 0.35f)),
+                };
+
+                int slot = _nearbyRelics.Count;
+                while (slot > 0 && _nearbyRelics[slot - 1].Distance > distance) slot--;
+                _nearbyRelics.Insert(slot, plate);
+                if (_nearbyRelics.Count > RelicLabelMax) _nearbyRelics.RemoveAt(RelicLabelMax);
+            }
+
+            // 가까운 것이 위에 오도록 먼 것부터 그린다
+            for (int i = _nearbyRelics.Count - 1; i >= 0; i--) DrawNameplate(_nearbyRelics[i]);
+            _nearbyRelics.Clear();
+        }
+
+        struct Nameplate
+        {
+            public string Text;
+            public Vector3 World;
+            public float Distance;
+            public float Alpha;
+        }
+
+        readonly List<Nameplate> _nearbyRelics = new List<Nameplate>();
+        Camera _cam;
+
+        void DrawNameplate(Nameplate plate)
+        {
+            if (string.IsNullOrEmpty(plate.Text)) return;
+
+            Vector3 screen = _cam.WorldToScreenPoint(plate.World);
+            if (screen.z < 0f) return;                       // 카메라 뒤
+
+            // OnGUI 는 Layout·Repaint·입력 이벤트마다 돈다. 이름은 변하지 않으니 한 번만 잰다.
+            _plateContent.text = plate.Text;
+            if (!_plateSizes.TryGetValue(plate.Text, out Vector2 size))
+            {
+                size = _nameplate.CalcSize(_plateContent);
+                _plateSizes[plate.Text] = size;
+            }
+            float w = size.x + 16f, h = size.y + 7f;
+
+            float x = screen.x - w * 0.5f;
+            float y = Screen.height - screen.y - h;          // GUI 는 y 가 아래로 간다
+            if (x + w < 0f || x > Screen.width || y + h < 0f || y > Screen.height) return;
+
+            x = Mathf.Clamp(x, 2f, Mathf.Max(2f, Screen.width - w - 2f));
+            y = Mathf.Clamp(y, 2f, Mathf.Max(2f, Screen.height - h - 2f));
+
+            var box = new Rect(x, y, w, h);
+            Fill(box, new Color(0.04f, 0.03f, 0.06f, 0.72f * plate.Alpha));
+            Fill(new Rect(box.x, box.yMax - 2f, box.width, 2f),
+                new Color(0.98f, 0.84f, 0.49f, 0.85f * plate.Alpha));
+
+            var old = GUI.color;
+            GUI.color = new Color(1f, 0.97f, 0.9f, plate.Alpha);
+            GUI.Label(box, _plateContent, _nameplate);
+            GUI.color = old;
+        }
+
+        readonly GUIContent _plateContent = new GUIContent();
+        readonly Dictionary<string, Vector2> _plateSizes = new Dictionary<string, Vector2>();
 
         void Fill(Rect r, Color c)
         {
