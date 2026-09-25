@@ -28,6 +28,16 @@ namespace DigGame
         public int AutoItemsToday { get; private set; }
         public int LifetimeAutoIncome { get; private set; }
 
+        public int StockpileRawValue
+        {
+            get
+            {
+                int total = 0;
+                for (int i = 0; i < Stockpile.Count; i++) total += Stockpile[i].Value;
+                return total;
+            }
+        }
+
         public MineSite(int id, RectInt rect, Zone zone, int oreTier, int reserve)
         {
             Id = id;

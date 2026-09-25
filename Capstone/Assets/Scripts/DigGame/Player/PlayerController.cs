@@ -93,6 +93,9 @@ namespace DigGame
         int EffectiveVolume(LootItem item) =>
             Gear.HasCompressor ? Mathf.Max(1, Mathf.CeilToInt(item.Volume * GameConfig.CompressorFactor))
                                : item.Volume;
+        /// <summary>낙하 시스템은 쓰지 않지만 에디터 미리보기가 참조한다.</summary>
+        public bool IsFalling => false;
+
         public int Depth => WorldGrid.DepthOf(Cell.y);
         public Zone CurrentZone => ZoneInfo.FromDepth(Mathf.Max(0, Depth));
         public bool AtSurface => transform.position.y > -GameConfig.SurfaceRow * GameConfig.CellSize + Eps;
