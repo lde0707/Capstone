@@ -127,12 +127,14 @@ namespace DigGame
         /// </summary>
         public const float BuildingScale = 0.70f;
 
-        // 지상 배치 — 건물 폭(48px=3칸, x0.7 = 2.1칸)을 기준으로 최대한 좁혔다.
-        //   투입소[-8.05~-5.95]  내 집[-3.55~-1.45]  스폰[-1]  입구[0~+5] (최대 확장)
-        //   강화소[+5.95~+8.05]  복원소[+9.45~+11.55]  이웃집은 -11 / +13 부터
-        public const int BuildingOffsetX = 6;       // 강화소(처리장) — 입구 오른쪽
-        public const int RecycleOffsetX = -8;       // 투입소(분리수거장) — 내 집 왼쪽
-        public const int RestorerOffsetX = 10;      // 복원소 — 강화소 바깥
+        // 지상 배치 — 세 시설(투입소·강화소·복원소)을 스폰 왼쪽에 한 덩어리로 모았다.
+        // 플레이어는 땅굴 하나를 드나드는 게 전부라, 시설이 흩어져 있으면 아예 보지 못한다.
+        //   내 집[-12.55~-10.45]  복원소[-9.55~-7.45]  강화소[-7.05~-4.95]
+        //   투입소[-4.05~-1.95]   스폰[-1]  입구[0~+5] (최대 확장)
+        // 세 시설 전체 폭 7.6칸 — 스폰에서 가장 먼 시설까지 8.6칸이면 한눈에 들어온다.
+        public const int BuildingOffsetX = -7;      // 강화소(처리장)
+        public const int RecycleOffsetX = -4;       // 투입소(분리수거장) — 스폰 바로 옆
+        public const int RestorerOffsetX = -9;      // 복원소 — 세 시설 중 가장 바깥
         public const int BuildingInteractRange = 2;
 
         // ---------- 마을 밀도 ----------

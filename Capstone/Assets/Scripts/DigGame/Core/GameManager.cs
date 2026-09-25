@@ -161,13 +161,14 @@ namespace DigGame
             View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
 
             Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 지상 입구 아래 쓰레기부터 수거하자!");
-            Log("쓰레기는 지상 왼쪽 분리수거장 앞에서 E를 눌러 버린다");
+            Log("쓰레기는 스폰 바로 왼쪽 투입소 앞에서 E를 눌러 버린다");
+            Log("스폰 왼쪽에 투입소 → 강화소 → 복원소 → 내 집 순으로 붙어 있다");
             Log($"잔디 지반은 팔 수 없다 · 스폰 오른쪽 {GameConfig.SurfaceEntranceOffsetX}칸의 통로로 지하에 들어가자");
             Log($"할당량 달성 보너스 +{QuotaCompletionBonus:N0}원 · 미달 시 부족액의 x{GameConfig.QuotaShortfallPenaltyMultiplier:0.00} 긴급 정산");
             Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
             Log($"채울 때마다 더 큰 다음 목표가 열린다 (하루 최대 {GameConfig.MaxQuotaStages}단계) — 단계마다 마을이 커진다");
             Log("할당량을 채우면 지상의 내 집이 빛나면서 커진다 — 7일이면 도시가 된다");
-            Log($"땅속 보랏빛 광점은 <b>유물</b>이다 — 캐서 오른쪽 복원소 앞에서 E " +
+            Log($"땅속 보랏빛 광점은 <b>유물</b>이다 — 캐서 복원소 앞에서 E " +
                 $"(유물 {RelicCatalog.Count}종 · C 키로 도감)");
         }
 
@@ -493,31 +494,28 @@ namespace DigGame
             return Mathf.Max(dx, dy) <= GameConfig.BuildingInteractRange;
         }
 
+        /// <summary>
+        /// E 키. 세 시설을 바짝 붙여 놓아서 사정거리가 서로 겹친다.
+        /// 그래서 "지금 할 일이 있는" 시설이 먼저 가져가고, 아무 일도 없으면 다음으로 넘긴다.
+        /// (쓰레기를 들고 강화소 앞에 서 있다고 상점이 안 열리면 안 된다)
+        /// </summary>
         void HandleInteract()
         {
-            // 복원소와 강화소는 사정거리가 겹칠 수 있다.
-            // 맡길 유물이 있을 때만 복원소가 E를 가져가고, 없으면 강화소로 넘긴다.
-            if (PlayerNearRestorer() && Relics != null && Relics.CarriedCount > 0)
+            // 상점이 열려 있으면 E 는 언제나 '닫기'다.
+            if (ShopOpen) { ShopOpen = false; return; }
+
+            bool nearRestorer = PlayerNearRestorer();
+            bool nearRecycle = PlayerNearRecycle();
+            bool nearShop = PlayerNearBuilding();
+
+            // 1) 할 일이 있는 시설 순서대로
+            if (nearRestorer && Relics != null && Relics.CarriedCount > 0)
             {
                 Relics.DepositAll();
                 return;
             }
-            if (PlayerNearRestorer() && !PlayerNearBuilding())
+            if (nearRecycle && Player.Inventory.Count > 0)
             {
-                Log(Relics != null && Relics.QueueCount > 0
-                    ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
-                    : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자");
-                return;
-            }
-
-            if (PlayerNearRecycle())
-            {
-                if (Player.Inventory.Count == 0)
-                {
-                    Log("분리수거장에 버릴 쓰레기가 없다");
-                    return;
-                }
-
                 RecycleAtFactory(Player.TakeAll());
                 return;
             }
@@ -529,7 +527,28 @@ namespace DigGame
                 return;
             }
 
-            ToggleShop();
+            // 2) 강화소는 언제나 열 수 있다
+            if (nearShop)
+            {
+                ShopOpen = true;
+                return;
+            }
+
+            // 3) 할 일이 없을 때의 안내
+            if (nearRestorer)
+            {
+                Log(Relics != null && Relics.QueueCount > 0
+                    ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
+                    : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자");
+                return;
+            }
+            if (nearRecycle)
+            {
+                Log("분리수거장에 버릴 쓰레기가 없다");
+                return;
+            }
+
+            Log("시설 앞으로 가서 E 를 눌러야 한다 (투입소 · 강화소 · 복원소)");
         }
 
         void InteractMine(MineSite mine)
@@ -562,17 +581,6 @@ namespace DigGame
                 Log("가방에 들어갈 공간이 없다");
             else
                 Log("도시광산 보관함이 비어 있다 · H 수거 / J 운반 일꾼 고용");
-        }
-
-        void ToggleShop()
-        {
-            if (ShopOpen) { ShopOpen = false; return; }
-            if (!PlayerNearBuilding())
-            {
-                Log("처리장 건물 앞으로 가서 E 를 눌러야 한다");
-                return;
-            }
-            ShopOpen = true;
         }
 
         public void CloseShop() => ShopOpen = false;

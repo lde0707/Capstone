@@ -37,18 +37,18 @@ namespace DigGame
 
         /// <summary>
         /// 이웃집이 들어설 자리 (중심에서의 칸 오프셋). 안쪽부터 채워진다.
-        /// 고정 시설(투입소 -8 · 내 집 -3 · 입구 +2 · 강화소 +6 · 복원소 +10) 바깥에서 시작한다.
+        /// 고정 시설(내 집 -12 · 복원소 -9 · 강화소 -7 · 투입소 -4 · 입구 +2) 바깥에서 시작한다.
         /// </summary>
         static readonly int[] NeighborOffsets =
-            BuildSlots(11, 13, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
+            BuildSlots(15, 7, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
 
         /// <summary>집 앞을 채울 소품 자리 — 집보다 한 칸 앞에 서서 거리처럼 겹쳐 보인다.</summary>
         static readonly int[] PropOffsets =
-            BuildSlots(12, 14, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
+            BuildSlots(16, 8, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
 
         /// <summary>복원된 전시형 유물이 놓일 자리.</summary>
         static readonly int[] RelicOffsets =
-            BuildSlots(10, 15, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
+            BuildSlots(17, 9, GameConfig.NeighborSpacing, GameConfig.NeighborSlots);
 
         /// <summary>
         /// 세트 보너스 랜드마크 자리. 도감을 다 채운 보람이 보여야 하니
@@ -146,8 +146,8 @@ namespace DigGame
             _grid = game.Grid;
             _rng = new System.Random(game.Seed * 7919 + 13);
             _centerX = _grid.Width / 2;
-            TownMinX = _centerX - 11;
-            TownMaxX = _centerX + 15;
+            TownMinX = _centerX - 14;
+            TownMaxX = _centerX + 8;
 
             _root = new GameObject("Village").transform;
             _root.SetParent(transform, false);
@@ -233,8 +233,11 @@ namespace DigGame
         }
 
         // ------------------------------------------------------------------
-        /// <summary>내 집 자리. 스폰 지점과 지하 입구를 비워 두려고 왼쪽으로 물러나 있다.</summary>
-        const int HomeOffset = -3;
+        /// <summary>
+        /// 내 집 자리. 매일 쓰는 세 시설을 스폰 가까이 두고, 집은 그 바깥으로 물러났다.
+        /// (투입소와 자리를 맞바꾼 결과 — 쓰레기를 버리는 곳이 스폰 바로 옆이다)
+        /// </summary>
+        const int HomeOffset = -12;
 
         /// <summary>복원소가 설 자리. 강화소 바깥.</summary>
         const int RestorerOffset = GameConfig.RestorerOffsetX;
@@ -252,7 +255,8 @@ namespace DigGame
             _restorerSign = Spawn("RestorerSign",
                 VillageSpriteCatalog.Sign(VillageSpriteCatalog.SignKind.Restorer, _era),
                 StandOn(_centerX + RestorerOffset)
-                    + Vector3.up * (VillageSpriteCatalog.SignLift
+                    + Vector3.up * (VillageSpriteCatalog.SignLiftFor(
+                                        VillageSpriteCatalog.SignKind.Restorer)
                                     * GameConfig.BuildingScale * GameConfig.CellSize),
                 OrderVillager + 5, GameConfig.BuildingScale);
         }

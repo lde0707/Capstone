@@ -155,6 +155,13 @@ namespace DigGame
         /// <summary>간판이 건물 꼭대기 위로 뜨는 높이 (칸).</summary>
         public const float SignLift = 3.15f;
 
+        /// <summary>
+        /// 시설을 바짝 붙여 놓아서 간판(4칸 폭)끼리 닿는다.
+        /// 가운데 선 강화소 간판만 한 단 올려 세 개가 다 읽히게 한다.
+        /// </summary>
+        public static float SignLiftFor(SignKind kind) =>
+            kind == SignKind.Shop ? SignLift + 1.7f : SignLift;
+
         public static int SignStyleForEra(int era)
         {
             int e = ClampEra(era);

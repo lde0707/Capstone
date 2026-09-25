@@ -575,7 +575,7 @@ namespace DigGame
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.position = stand
-                + Vector3.up * (VillageSpriteCatalog.SignLift
+                + Vector3.up * (VillageSpriteCatalog.SignLiftFor(kind)
                                 * GameConfig.BuildingScale * GameConfig.CellSize);
             var sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = VillageSpriteCatalog.Sign(kind, _villageEra);
