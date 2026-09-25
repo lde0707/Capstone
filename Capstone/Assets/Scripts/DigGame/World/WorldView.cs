@@ -11,6 +11,8 @@ namespace DigGame
     public class WorldView : MonoBehaviour
     {
         // 정렬 순서
+        /// <summary>파낸 자리 뒤에 깔리는 흙벽. 땅보다 한 단 뒤다.</summary>
+        const int OrderBackdrop = -1;
         const int OrderGround = 0;
         const int OrderTreasure = 30;  // 보물은 어둠에 가려진다 (직접 찾아야 함)
         const int OrderFog = 45;
@@ -21,13 +23,22 @@ namespace DigGame
         const int OrderHighlight = 48;
         const int OrderPlayer = 50;
 
+        /// <summary>
+        /// 파낸 자리에 깔리는 뒷벽의 색. 같은 지층 흙을 어둡고 살짝 차갑게 눌러
+        /// "한 겹 뒤에 있는 면"으로 읽히게 한다 (멀수록 어둡고 푸른 공기 원근).
+        /// </summary>
+        static readonly Color BackdropTint = new Color(0.44f, 0.43f, 0.52f, 1f);
+
         WorldGrid _grid;
+        Tilemap _backdrop;
         Tilemap _ground;
         Tilemap _digFeatureMap;
         Tilemap _buriedHintMap;
 
         readonly Dictionary<TileKind, TileBase> _flatTiles = new Dictionary<TileKind, TileBase>();
         readonly Dictionary<TileKind, TileBase[]> _terrainTiles = new Dictionary<TileKind, TileBase[]>();
+        /// <summary>파낸 자리 뒷벽 타일 — (지층, 무늬) 조합만큼 만들어 둔다.</summary>
+        readonly Dictionary<int, TileBase> _backdropTiles = new Dictionary<int, TileBase>();
         /// <summary>통로 타일은 (지층, 마스크*변형) 조합이 많아 필요할 때 만들어 캐싱한다.</summary>
         readonly Dictionary<int, TileBase> _passageTiles = new Dictionary<int, TileBase>();
         readonly Dictionary<DigFeature, TileBase> _digFeatureTiles = new Dictionary<DigFeature, TileBase>();
@@ -55,6 +66,7 @@ namespace DigGame
             var uGrid = gridGo.AddComponent<UnityEngine.Grid>();
             uGrid.cellSize = new Vector3(GameConfig.CellSize, GameConfig.CellSize, 0f);
 
+            _backdrop = MakeTilemap(gridGo.transform, "Ground Backdrop", OrderBackdrop);
             _ground = MakeTilemap(gridGo.transform, "Ground", OrderGround);
             _digFeatureMap = MakeTilemap(gridGo.transform, "Dig Feature Hints", OrderTreasure - 2);
             _digFeatureMap.gameObject.AddComponent<BuriedHintMapPulse>();
@@ -102,6 +114,8 @@ namespace DigGame
             _relicHintTile = null;
             foreach (var tile in _shaftTiles.Values) DestroyGenerated(tile);
             _shaftTiles.Clear();
+            foreach (var tile in _backdropTiles.Values) DestroyGenerated(tile);
+            _backdropTiles.Clear();
             _flatTiles.Clear();
             _terrainTiles.Clear();
             _passageTiles.Clear();
@@ -187,6 +201,7 @@ namespace DigGame
             int w = _grid.Width, h = _grid.Height;
             var positions = new Vector3Int[w * h];
             var tiles = new TileBase[w * h];
+            var backdrops = new TileBase[w * h];
 
             int i = 0;
             for (int y = 0; y < h; y++)
@@ -195,9 +210,11 @@ namespace DigGame
                 {
                     positions[i] = ToCell(x, y);
                     tiles[i] = TileAt(x, y);
+                    backdrops[i] = BackdropAt(x, y);
                     i++;
                 }
             }
+            _backdrop.SetTiles(positions, backdrops);
             _ground.SetTiles(positions, tiles);
         }
 
@@ -220,6 +237,42 @@ namespace DigGame
 
             int pattern = PositiveMod(x, 4) + PositiveMod(y, 4) * 4;
             return _terrainTiles.TryGetValue(kind, out var set) ? set[pattern] : null;
+        }
+
+        /// <summary>
+        /// 파낸 자리 뒤에 깔 흙벽. 캐기 전 그 자리에 있던 지층을 어둡게 눌러 쓴다.
+        /// 지상·입구 갱도처럼 이미 꽉 찬 칸에는 깔지 않는다.
+        /// </summary>
+        TileBase BackdropAt(int x, int y)
+        {
+            if (_grid.Get(x, y) != TileKind.Empty) return null;
+            if (y < GameConfig.SurfaceRow) return null;          // 하늘
+            if (IsEntranceShaft(x, y)) return null;              // 갱도 타일이 칸을 꽉 채운다
+
+            TileKind original = _grid.OriginalGroundAt(x, y);
+            if (original == TileKind.Empty || original == TileKind.Sky) return null;
+
+            // 앞면과 무늬가 겹치면 "같은 타일이 비친" 것처럼 보여서 한 칸씩 어긋낸다.
+            int pattern = PositiveMod(x + 2, 4) + PositiveMod(y + 1, 4) * 4;
+            return BackdropTile(original, pattern);
+        }
+
+        TileBase BackdropTile(TileKind kind, int pattern)
+        {
+            int key = (int)kind * 16 + pattern;
+            if (_backdropTiles.TryGetValue(key, out var cached)) return cached;
+
+            var sprite = EnvironmentSpriteCatalog.GroundFill(kind, pattern)
+                         ?? SpriteFactory.Noisy(TileInfo.ColorOf(kind), pattern + (int)kind * 977);
+            if (sprite == null) return null;
+
+            var tile = ScriptableObject.CreateInstance<Tile>();
+            tile.hideFlags = HideFlags.DontSave;
+            tile.sprite = sprite;
+            tile.color = BackdropTint;
+            tile.flags = TileFlags.LockColor;
+            _backdropTiles[key] = tile;
+            return tile;
         }
 
         /// <summary>잔디층을 관통하는 지하 입구 칸인가.</summary>
@@ -388,7 +441,10 @@ namespace DigGame
                 for (int ox = -1; ox <= 1; ox++)
                 {
                     int tx = x + ox, ty = y + oy;
-                    if (_grid.InBounds(tx, ty)) _ground.SetTile(ToCell(tx, ty), TileAt(tx, ty));
+                    if (!_grid.InBounds(tx, ty)) continue;
+                    var cell = ToCell(tx, ty);
+                    _backdrop.SetTile(cell, BackdropAt(tx, ty));
+                    _ground.SetTile(cell, TileAt(tx, ty));
                 }
 
             if (TileInfo.IsWalkable(kind) && _grid.HasTreasure(x, y))
