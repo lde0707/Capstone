@@ -195,12 +195,11 @@ namespace DigGame
         SpriteRenderer Spawn(string name, Sprite sprite, Vector3 position, int order,
             float scale = 1f)
         {
-            var go = new GameObject(name);
-            go.transform.SetParent(_root, false);
+            var go = _game.Prefabs.Create<SpriteRenderer>(PrefabId.VillageSprite, _root, name).gameObject;
             go.transform.position = position;
             if (!Mathf.Approximately(scale, 1f))
                 go.transform.localScale = Vector3.one * scale;
-            var sr = go.AddComponent<SpriteRenderer>();
+            var sr = go.GetComponent<SpriteRenderer>();
             sr.sprite = sprite;
             sr.sortingOrder = order;
             return sr;
@@ -288,7 +287,7 @@ namespace DigGame
                 }
                 else
                 {
-                    VillageUpgradeFx.Play(_root, StandOn(HomeX), 3f * GameConfig.CellSize);
+                    VillageUpgradeFx.Play(_game.Prefabs, _root, StandOn(HomeX), 3f * GameConfig.CellSize);
                     _game.Log($"할당량 달성! {EraName} 시대의 마을이 한 뼘 넓어졌다 ({StageName})");
                 }
 
@@ -338,14 +337,14 @@ namespace DigGame
 
             Vector3 at = StandOn(HomeX);
             // 시대가 바뀌는 순간은 마을 전체가 빛에 휩싸인다.
-            VillageUpgradeFx.Play(_root, at, (grew ? 4.5f : 3f) * GameConfig.CellSize);
+            VillageUpgradeFx.Play(_game.Prefabs, _root, at, (grew ? 4.5f : 3f) * GameConfig.CellSize);
             if (grew)
             {
-                VillageUpgradeFx.Play(_root, StandOn(_centerX + RestorerOffset), 3.4f * GameConfig.CellSize);
+                VillageUpgradeFx.Play(_game.Prefabs, _root, StandOn(_centerX + RestorerOffset), 3.4f * GameConfig.CellSize);
                 for (int i = 0; i < _houses.Count; i++)
                 {
                     if (_houses[i] == null) continue;
-                    VillageUpgradeFx.Play(_root, _houses[i].transform.position, 2.4f * GameConfig.CellSize);
+                    VillageUpgradeFx.Play(_game.Prefabs, _root, _houses[i].transform.position, 2.4f * GameConfig.CellSize);
                 }
             }
 
@@ -470,7 +469,7 @@ namespace DigGame
             _houses.Add(sr);
             _houseLag.Add(lag);
             _houseKind.Add(kind);
-            VillageUpgradeFx.Play(_root, StandOn(x), 2.2f * GameConfig.CellSize);
+            VillageUpgradeFx.Play(_game.Prefabs, _root, StandOn(x), 2.2f * GameConfig.CellSize);
 
             TownMinX = Mathf.Min(TownMinX, x - 2);
             TownMaxX = Mathf.Max(TownMaxX, x + 2);
@@ -514,9 +513,7 @@ namespace DigGame
                 if (_villagers.Count >= MaxVillagers) return;
 
                 int x = PickStandCell();
-                var go = new GameObject($"Villager#{_villagerCount}");
-                go.transform.SetParent(_root, false);
-                var v = go.AddComponent<Villager>();
+                var v = _game.Prefabs.Create<Villager>(PrefabId.Villager, _root, $"Villager#{_villagerCount}");
                 v.Init(this, RollVillagerKind(), _era, StandOn(x));
                 _villagerCount++;
                 _villagers.Add(v);
@@ -566,9 +563,7 @@ namespace DigGame
             int x = wander ? PickStandCell() : NextRelicSlot();
             Vector3 at = StandOn(x);
 
-            var go = new GameObject($"Relic({def.Name})");
-            go.transform.SetParent(_root, false);
-            var unit = go.AddComponent<RelicUnit>();
+            var unit = _game.Prefabs.Create<RelicUnit>(PrefabId.RestoredRelic, _root, $"Relic({def.Name})");
             unit.Init(this, def, at, wander);
 
             _relicUnits.Add(unit);
@@ -581,7 +576,7 @@ namespace DigGame
                 UpdateRoad();
             }
 
-            VillageUpgradeFx.Play(_root, at, 2.6f * GameConfig.CellSize);
+            VillageUpgradeFx.Play(_game.Prefabs, _root, at, 2.6f * GameConfig.CellSize);
             return wander;
         }
 
@@ -611,7 +606,7 @@ namespace DigGame
             PaintGroundCover(TownMinX - 3, TownMaxX + 3);
             UpdateRoad();
 
-            VillageUpgradeFx.Play(_root, StandOn(x), 6f * GameConfig.CellSize);
+            VillageUpgradeFx.Play(_game.Prefabs, _root, StandOn(x), 6f * GameConfig.CellSize);
 
             // 분류마다 마을에 남는 흔적이 다르다.
             if (group == RelicGroup.Yokai) SpawnWisps();
@@ -679,9 +674,7 @@ namespace DigGame
                 Vector3 at = StandOn(PickStandCell());
                 Destroy(unit.gameObject);
 
-                var go = new GameObject($"Relic({def.Name})");
-                go.transform.SetParent(_root, false);
-                var fresh = go.AddComponent<RelicUnit>();
+                var fresh = _game.Prefabs.Create<RelicUnit>(PrefabId.RestoredRelic, _root, $"Relic({def.Name})");
                 fresh.Init(this, def, at, true);
                 _relicUnits[i] = fresh;
                 _wanderingRelics++;
@@ -697,7 +690,7 @@ namespace DigGame
             if (_wisps != null) return;
             var go = new GameObject("TownWisps");
             _wisps = go.AddComponent<TownWisps>();
-            _wisps.Setup(this, _root, GameConfig.YokaiSetWispCount);
+            _wisps.Setup(this, _root, GameConfig.YokaiSetWispCount, _game.Prefabs);
         }
 
         /// <summary>
@@ -725,9 +718,7 @@ namespace DigGame
                 Destroy(old.gameObject);
             }
 
-            var go = new GameObject("ResidentUFO");
-            go.transform.SetParent(_root, false);
-            var unit = go.AddComponent<RelicUnit>();
+            var unit = _game.Prefabs.Create<RelicUnit>(PrefabId.RestoredRelic, _root, "ResidentUFO");
             unit.Init(this, ufo, at, true, true, GameConfig.RelicAliveScale * 1.35f);
             _wanderingRelics++;
 
@@ -834,80 +825,5 @@ namespace DigGame
         bool InFacilityBand(int gridX) => InFacilityBandOffset(gridX - _centerX);
     }
 
-    /// <summary>집이 업그레이드될 때 터지는 빛기둥과 반짝이.</summary>
-    public class VillageUpgradeFx : MonoBehaviour
-    {
-        float _life;
-        float _duration;
-        float _width;
-        SpriteRenderer _beam;
-        readonly List<SpriteRenderer> _sparks = new List<SpriteRenderer>();
-        readonly List<Vector3> _velocities = new List<Vector3>();
 
-        public static void Play(Transform parent, Vector3 groundPosition, float width)
-        {
-            var go = new GameObject("UpgradeFx");
-            go.transform.SetParent(parent, false);
-            go.transform.position = groundPosition;
-            var fx = go.AddComponent<VillageUpgradeFx>();
-            fx._width = width;
-            fx.Setup();
-        }
-
-        void Setup()
-        {
-            _duration = 1.3f;
-            _life = _duration;
-
-            var beamGo = new GameObject("Beam");
-            beamGo.transform.SetParent(transform, false);
-            beamGo.transform.localPosition = new Vector3(0f, 6f, 0f);
-            _beam = beamGo.AddComponent<SpriteRenderer>();
-            _beam.sprite = SpriteFactory.Solid(Color.white);
-            _beam.color = new Color(1f, 0.96f, 0.72f, 0.55f);
-            _beam.sortingOrder = Village.OrderFx;
-            beamGo.transform.localScale = new Vector3(_width, 12f, 1f);
-
-            for (int i = 0; i < 14; i++)
-            {
-                var s = new GameObject("Spark");
-                s.transform.SetParent(transform, false);
-                s.transform.localPosition = new Vector3(
-                    Random.Range(-_width * 0.5f, _width * 0.5f), Random.Range(0f, 1.2f), 0f);
-                s.transform.localScale = Vector3.one * Random.Range(0.12f, 0.3f);
-                var sr = s.AddComponent<SpriteRenderer>();
-                sr.sprite = SpriteFactory.Diamond(Color.white);
-                sr.color = new Color(1f, 0.94f, 0.66f, 1f);
-                sr.sortingOrder = Village.OrderFx + 1;
-                _sparks.Add(sr);
-                _velocities.Add(new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(1.8f, 4.2f), 0f));
-            }
-        }
-
-        void Update()
-        {
-            _life -= Time.deltaTime;
-            float k = Mathf.Clamp01(_life / _duration);
-
-            if (_beam != null)
-            {
-                float pulse = Mathf.Sin((1f - k) * Mathf.PI);
-                _beam.color = new Color(1f, 0.96f, 0.72f, 0.62f * pulse);
-                _beam.transform.localScale = new Vector3(
-                    _width * (0.55f + 0.85f * pulse), 12f + 6f * (1f - k), 1f);
-            }
-
-            for (int i = 0; i < _sparks.Count; i++)
-            {
-                var sr = _sparks[i];
-                if (sr == null) continue;
-                sr.transform.localPosition += _velocities[i] * Time.deltaTime;
-                var c = sr.color;
-                c.a = k;
-                sr.color = c;
-            }
-
-            if (_life <= 0f) Destroy(gameObject);
-        }
-    }
 }

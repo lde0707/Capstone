@@ -29,6 +29,7 @@ namespace DigGame
         /// </summary>
         static readonly Color BackdropTint = new Color(0.44f, 0.43f, 0.52f, 1f);
 
+        IGameObjectFactory _factory;
         WorldGrid _grid;
         Tilemap _backdrop;
         Tilemap _ground;
@@ -57,8 +58,9 @@ namespace DigGame
         GameObject _surfaceRecycle;
 
         // ------------------------------------------------------------------
-        public void Build(WorldGrid grid)
+        public void Build(WorldGrid grid, IGameObjectFactory factory)
         {
+            _factory = factory ?? throw new System.ArgumentNullException(nameof(factory));
             _grid = grid;
 
             var gridGo = new GameObject("Tilemap Grid");
@@ -563,14 +565,13 @@ namespace DigGame
             if (!_grid.TryPeekRelic(x, y, out int relicId)) return;
 
             var def = RelicCatalog.Get(relicId);
-            var go = new GameObject($"Relic({x},{y})");
-            go.transform.SetParent(_markerRoot, false);
+            var go = _factory.Create<SpriteRenderer>(PrefabId.BuriedRelic, _markerRoot, $"Relic({x},{y})").gameObject;
             // 발굴본은 bottom-center 피벗이라 칸 바닥에 앉힌다.
             go.transform.position = WorldGrid.CellToWorld(x, y)
                 + Vector3.down * (0.5f * GameConfig.CellSize);
             go.transform.localScale = Vector3.one * GameConfig.RelicBuriedScale;
 
-            var sr = go.AddComponent<SpriteRenderer>();
+            var sr = go.GetComponent<SpriteRenderer>();
             sr.sprite = RelicSpriteCatalog.Buried(def);
             sr.sortingOrder = OrderTreasure + 1;
             if (sr.sprite == null)
@@ -601,11 +602,10 @@ namespace DigGame
             Color color = new Color32(255, 214, 96, 255);
             if (_grid.TryPeekTreasure(x, y, out var item)) color = item.Color;
 
-            var go = new GameObject($"Treasure({x},{y})");
-            go.transform.SetParent(_markerRoot, false);
+            var go = _factory.Create<SpriteRenderer>(PrefabId.Treasure, _markerRoot, $"Treasure({x},{y})").gameObject;
             go.transform.position = WorldGrid.CellToWorld(x, y);
 
-            var sr = go.AddComponent<SpriteRenderer>();
+            var sr = go.GetComponent<SpriteRenderer>();
             sr.sortingOrder = OrderTreasure;
 
             Sprite pixelArt = _grid.TryPeekTreasure(x, y, out item)
@@ -626,7 +626,6 @@ namespace DigGame
                 go.transform.localScale = Vector3.one * (0.6f * GameConfig.CellSize);
             }
 
-            go.AddComponent<Bobber>();
             _treasureMarkers[key] = go;
         }
 
@@ -652,10 +651,9 @@ namespace DigGame
             // 발견하며 비워진 구역을 여러 DB32 동굴 칸으로 채워 네모 한 장처럼 보이지 않게 한다.
             foreach (var cell in site.Cells)
             {
-                var backdrop = new GameObject($"CaveTile({cell.x},{cell.y})");
-                backdrop.transform.SetParent(go.transform, false);
+                var backdrop = _factory.Create<SpriteRenderer>(PrefabId.CaveTile, go.transform, $"CaveTile({cell.x},{cell.y})").gameObject;
                 backdrop.transform.position = WorldGrid.CellToWorld(cell.x, cell.y);
-                var bsr = backdrop.AddComponent<SpriteRenderer>();
+                var bsr = backdrop.GetComponent<SpriteRenderer>();
                 bsr.sprite = EnvironmentSpriteCatalog.CaveBackdrop(cell.x * 31 + cell.y * 17 + site.Id);
                 bsr.sortingOrder = OrderMineArt;
             }
@@ -689,12 +687,11 @@ namespace DigGame
         SpriteRenderer SpawnSign(Transform parent, Vector3 stand,
             VillageSpriteCatalog.SignKind kind, int order, string name)
         {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
+            var go = _factory.Create<SpriteRenderer>(PrefabId.Sign, parent, name).gameObject;
             go.transform.position = stand
                 + Vector3.up * (VillageSpriteCatalog.SignLiftFor(kind)
                                 * GameConfig.BuildingScale * GameConfig.CellSize);
-            var sr = go.AddComponent<SpriteRenderer>();
+            var sr = go.GetComponent<SpriteRenderer>();
             sr.sprite = VillageSpriteCatalog.Sign(kind, _villageEra);
             sr.sortingOrder = order;
             return sr;
@@ -710,12 +707,11 @@ namespace DigGame
         {
             if (_upgradeShop != null) return;
 
-            _upgradeShop = new GameObject("UpgradeShop");
-            _upgradeShop.transform.SetParent(_markerRoot, false);
+            _upgradeShop = _factory.Create<SpriteRenderer>(PrefabId.Facility, _markerRoot, "UpgradeShop").gameObject;
             _upgradeShop.transform.position = SurfaceStand(rect);
 
             _upgradeShop.transform.localScale = Vector3.one * GameConfig.BuildingScale;
-            var sr = _upgradeShop.AddComponent<SpriteRenderer>();
+            var sr = _upgradeShop.GetComponent<SpriteRenderer>();
             sr.sprite = VillageSpriteCatalog.EraShop(_villageEra);
             sr.sortingOrder = OrderMine;
 
@@ -769,10 +765,9 @@ namespace DigGame
 
                 _surfaceRecycle.transform.localScale = Vector3.one * GameConfig.BuildingScale;
 
-                var binGo = new GameObject("SurfaceBin");
-                binGo.transform.SetParent(_surfaceRecycle.transform, false);
+                var binGo = _factory.Create<SpriteRenderer>(PrefabId.Facility, _surfaceRecycle.transform, "SurfaceBin").gameObject;
                 binGo.transform.position = stand;
-                _dropoffRenderer = binGo.AddComponent<SpriteRenderer>();
+                _dropoffRenderer = binGo.GetComponent<SpriteRenderer>();
                 _dropoffRenderer.sprite = VillageSpriteCatalog.EraDropoff(_villageEra);
                 _dropoffRenderer.sortingOrder = OrderMine;
 
@@ -805,38 +800,34 @@ namespace DigGame
             for (int index = 0; index < outputMaterials.Count; index++)
             {
                 MaterialKind material = outputMaterials[index];
-                var go = new GameObject($"RecycledOutput({material})");
-                go.transform.SetParent(_markerRoot, false);
+                var go = _factory.Create<SpriteRenderer>(PrefabId.RecyclingOutput, _markerRoot, $"RecycledOutput({material})").gameObject;
                 go.transform.position = _surfaceRecycle.transform.position
                     + new Vector3((index - centerOffset) * 0.34f, 4.2f, 0f) * GameConfig.CellSize;
                 go.transform.localScale = Vector3.one * 0.8f;
-                var sr = go.AddComponent<SpriteRenderer>();
+                var sr = go.GetComponent<SpriteRenderer>();
                 sr.sprite = EnvironmentSpriteCatalog.RecycledProduct(material);
                 sr.sortingOrder = OrderHighlight;
-                go.AddComponent<RecyclingOutputFx>();
             }
         }
 
-        static void AddBinArt(Transform parent, Vector3 worldPosition, float scale,
+        void AddBinArt(Transform parent, Vector3 worldPosition, float scale,
             int sortingOrder, string name)
         {
-            var bin = new GameObject(name);
-            bin.transform.SetParent(parent, false);
+            var bin = _factory.Create<SpriteRenderer>(PrefabId.Facility, parent, name).gameObject;
             bin.transform.position = worldPosition;
             bin.transform.localScale = Vector3.one * scale;
-            var sr = bin.AddComponent<SpriteRenderer>();
+            var sr = bin.GetComponent<SpriteRenderer>();
             sr.sprite = EnvironmentSpriteCatalog.SurfaceBin();
             sr.sortingOrder = sortingOrder;
         }
 
-        static void AddRecycleSign(Transform parent, Vector3 worldPosition, int iconIndex,
+        void AddRecycleSign(Transform parent, Vector3 worldPosition, int iconIndex,
             float scale, int sortingOrder, string name)
         {
-            var sign = new GameObject(name);
-            sign.transform.SetParent(parent, false);
+            var sign = _factory.Create<SpriteRenderer>(PrefabId.Sign, parent, name).gameObject;
             sign.transform.position = worldPosition;
             sign.transform.localScale = Vector3.one * scale;
-            var sr = sign.AddComponent<SpriteRenderer>();
+            var sr = sign.GetComponent<SpriteRenderer>();
             sr.sprite = EnvironmentSpriteCatalog.RecycleItem(iconIndex);
             sr.sortingOrder = sortingOrder;
         }
@@ -862,12 +853,11 @@ namespace DigGame
 
             foreach (var (cell, item) in _grid.TreasuresNear(center, radius))
             {
-                var go = new GameObject($"Ping({cell.x},{cell.y})");
-                go.transform.SetParent(_markerRoot, false);
+                var go = _factory.Create<SpriteRenderer>(PrefabId.DetectorPing, _markerRoot, $"Ping({cell.x},{cell.y})").gameObject;
                 go.transform.position = WorldGrid.CellToWorld(cell.x, cell.y);
                 go.transform.localScale = Vector3.one * (0.5f * GameConfig.CellSize);
 
-                var sr = go.AddComponent<SpriteRenderer>();
+                var sr = go.GetComponent<SpriteRenderer>();
                 sr.sprite = SpriteFactory.Diamond(Color.white);
                 sr.color = new Color(item.Color.r, item.Color.g, item.Color.b, 0.9f);
                 sr.sortingOrder = OrderHighlight;   // 포그 위에 보인다
@@ -906,63 +896,9 @@ namespace DigGame
         public static int WorkerSortingOrder => OrderWorker;
     }
 
-    /// <summary>위아래로 살짝 떠다니는 연출.</summary>
-    public class Bobber : MonoBehaviour
-    {
-        Vector3 _base;
-        float _phase;
 
-        void Start()
-        {
-            _base = transform.position;
-            _phase = Random.value * 6.28f;
-        }
 
-        void Update()
-        {
-            transform.position = _base + new Vector3(0f, Mathf.Sin(Time.time * 3f + _phase) * 0.07f, 0f);
-        }
-    }
 
-    /// <summary>수천 개의 개별 Update 없이 묻힌 쓰레기 힌트 타일맵 전체를 맥동시킨다.</summary>
-    public class BuriedHintMapPulse : MonoBehaviour
-    {
-        Tilemap _tilemap;
-        float _phase;
 
-        void Start()
-        {
-            _tilemap = GetComponent<Tilemap>();
-            _phase = Random.value * 6.28f;
-        }
 
-        void Update()
-        {
-            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3.4f + _phase);
-            if (_tilemap != null)
-                _tilemap.color = new Color(1f, 1f, 1f, 0.55f + pulse * 0.40f);
-        }
-    }
-
-    /// <summary>공장에서 나온 재활용 결과물 아이콘을 위로 띄운 뒤 사라지게 한다.</summary>
-    public class RecyclingOutputFx : MonoBehaviour
-    {
-        SpriteRenderer _renderer;
-        float _life = 1.8f;
-
-        void Start() => _renderer = GetComponent<SpriteRenderer>();
-
-        void Update()
-        {
-            transform.position += Vector3.up * (0.7f * Time.deltaTime);
-            _life -= Time.deltaTime;
-            if (_renderer != null)
-            {
-                Color color = _renderer.color;
-                color.a = Mathf.Clamp01(_life / 0.6f);
-                _renderer.color = color;
-            }
-            if (_life <= 0f) Destroy(gameObject);
-        }
-    }
 }

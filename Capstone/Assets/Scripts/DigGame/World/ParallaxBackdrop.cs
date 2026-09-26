@@ -39,6 +39,8 @@ namespace DigGame
 
         public void Setup(Camera camera, GameManager game)
         {
+            ReleaseLayers();
+            _era = -1;
             _camera = camera;
             _game = game;
 
@@ -57,9 +59,8 @@ namespace DigGame
             var layer = new Layer { Root = root, Follow = follow, Tiles = new SpriteRenderer[Copies] };
             for (int i = 0; i < Copies; i++)
             {
-                var go = new GameObject($"Tile{i}");
-                go.transform.SetParent(root, false);
-                var sr = go.AddComponent<SpriteRenderer>();
+                var go = _game.Prefabs.Create<SpriteRenderer>(PrefabId.BackdropTile, root, $"Tile{i}").gameObject;
+                var sr = go.GetComponent<SpriteRenderer>();
                 sr.sortingOrder = order;
                 layer.Tiles[i] = sr;
             }
@@ -126,10 +127,22 @@ namespace DigGame
                 if (layer.Tiles[i] != null) layer.Tiles[i].color = tint;
         }
 
-        void OnDestroy()
+        void OnDestroy() => ReleaseLayers();
+
+        void ReleaseLayers()
         {
-            if (_far != null && _far.Root != null) Destroy(_far.Root.gameObject);
-            if (_near != null && _near.Root != null) Destroy(_near.Root.gameObject);
+            ReleaseLayer(_far);
+            ReleaseLayer(_near);
+            _far = null;
+            _near = null;
+        }
+
+        static void ReleaseLayer(Layer layer)
+        {
+            if (layer == null || layer.Root == null) return;
+            layer.Root.gameObject.SetActive(false);
+            if (Application.isPlaying) Destroy(layer.Root.gameObject);
+            else DestroyImmediate(layer.Root.gameObject);
         }
     }
 }

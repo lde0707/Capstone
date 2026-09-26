@@ -6,7 +6,7 @@ namespace DigGame
     /// 지상을 어슬렁거리는 마을 주민. 상호작용은 없고, 걷다가 가끔 멈춰 선다.
     /// (지금은 분위기 담당 — 마을이 살아 있다는 신호)
     /// </summary>
-    public class Villager : MonoBehaviour
+    public class Villager : SpriteActor
     {
         const float WalkSpeed = 1.15f;
         const float FramesPerSecond = 7f;
@@ -41,11 +41,9 @@ namespace DigGame
                 groundPosition.x,
                 groundPosition.y + GameConfig.PlayerScale * 0.45f,
                 0f);
-            transform.localScale = Vector3.one * (GameConfig.PlayerScale * 1.12f);
 
-            _sr = gameObject.AddComponent<SpriteRenderer>();
+            _sr = ActorRenderer;
             _sr.sprite = _frames.Length > 0 ? _frames[0] : null;
-            _sr.sortingOrder = Village.OrderVillager;
 
             _dir = Random.value < 0.5f ? -1f : 1f;
             _stateTimer = Random.Range(1.5f, 5f);

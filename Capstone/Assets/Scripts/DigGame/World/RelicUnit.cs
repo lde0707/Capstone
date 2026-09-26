@@ -8,7 +8,7 @@ namespace DigGame
     ///  - 전시형은 좌대에 선 채 4프레임으로 숨만 쉰다
     ///  - 배회형은 주민처럼 마을을 어슬렁거린다 (공중형은 지붕 위를 떠다닌다)
     /// </summary>
-    public class RelicUnit : MonoBehaviour
+    public class RelicUnit : SpriteActor
     {
         const float WalkSpeed = 0.85f;
         const float FlySpeed = 1.35f;
@@ -69,7 +69,7 @@ namespace DigGame
             transform.localScale = Vector3.one * (scale > 0f ? scale : GameConfig.RelicAliveScale);
             _baseY = transform.position.y;
 
-            _sr = gameObject.AddComponent<SpriteRenderer>();
+            _sr = ActorRenderer;
             _sr.sprite = _frames.Length > 0 ? _frames[0] : null;
             // 배회형은 주민과 같은 층, 전시형은 건물보다 살짝 앞.
             _sr.sortingOrder = wander ? Village.OrderVillager - 1 : Village.OrderProp + 1;

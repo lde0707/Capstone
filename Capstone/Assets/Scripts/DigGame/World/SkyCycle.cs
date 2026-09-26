@@ -22,6 +22,7 @@ namespace DigGame
 
         public void Setup(Camera camera, GameManager game)
         {
+            ReleaseVisuals();
             _camera = camera;
             _game = game;
 
@@ -136,10 +137,16 @@ namespace DigGame
             nightAmount = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.78f, 1f, progress));
         }
 
-        void OnDestroy()
+        void OnDestroy() => ReleaseVisuals();
+
+        void ReleaseVisuals()
         {
+            if (_backdrop != null) _backdrop.SetActive(false);
             DestroyGenerated(_backdrop);
             DestroyGenerated(_material);
+            _backdrop = null;
+            _renderer = null;
+            _material = null;
         }
 
         static void DestroyGenerated(Object obj)

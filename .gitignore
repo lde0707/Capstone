@@ -1,0 +1,15 @@
+# Unity-generated local caches and build output
+/Capstone/[Ll]ibrary/
+/Capstone/[Tt]emp/
+/Capstone/[Oo]bj/
+/Capstone/[Ll]ogs/
+/Capstone/[Uu]ser[Ss]ettings/
+/Capstone/[Bb]uild/
+/Capstone/[Bb]uilds/
+/Capstone/[Mm]emoryCaptures/
+/Capstone/[Rr]ecordings/
+/Capstone/.vs/
+/Capstone/*.csproj
+/Capstone/*.sln
+/Capstone/*.slnx
+/Capstone/*.user

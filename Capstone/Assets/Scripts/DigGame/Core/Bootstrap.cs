@@ -81,7 +81,7 @@ namespace DigGame
                 _root = null;
             }
 
-            // 카메라의 CameraFollow 는 GameManager.SetupCamera 가 새로 붙이면서 교체한다.
+            // 카메라 컴포넌트는 GameManager.SetupCamera가 재사용하며 새 세션으로 초기화한다.
             SpriteFactory.ClearCache();
         }
     }

@@ -7,7 +7,7 @@ namespace DigGame
     /// 두더지는 근처에서 가장 비싼 쓰레기 방향을 화살표로 가리킨다.
     /// (반딧불이 시야·거북이 가방 보너스는 PlayerGear 가 수치로 처리한다.)
     /// </summary>
-    public class PetCompanion : MonoBehaviour
+    public class PetCompanion : SpriteActor
     {
         GameManager _game;
         PetKind _kind;
@@ -23,17 +23,13 @@ namespace DigGame
             _game = game;
             _kind = kind;
 
-            _sr = gameObject.AddComponent<SpriteRenderer>();
+            _sr = ActorRenderer;
             _sr.sprite = SpriteFactory.Framed(PetColor(kind), new Color32(40, 30, 20, 255));
-            _sr.sortingOrder = WorldView.PlayerSortingOrder - 1;
-            transform.localScale = Vector3.one * (GameConfig.PlayerScale * 0.55f);
 
             if (kind == PetKind.Mole)
             {
-                var arrowGo = new GameObject("MoleArrow");
-                arrowGo.transform.SetParent(null, false);
-                _arrow = arrowGo.transform;
-                _arrowSr = arrowGo.AddComponent<SpriteRenderer>();
+                _arrowSr = game.Prefabs.Create<SpriteRenderer>(PrefabId.PetArrow, game.transform, "MoleArrow");
+                _arrow = _arrowSr.transform;
                 _arrowSr.sprite = SpriteFactory.Diamond(new Color32(255, 200, 60, 255));
                 _arrowSr.sortingOrder = WorldView.PlayerSortingOrder + 1;
                 _arrow.localScale = new Vector3(0.5f, 0.28f, 1f);
@@ -57,7 +53,9 @@ namespace DigGame
 
         void OnDestroy()
         {
-            if (_arrow != null) Destroy(_arrow.gameObject);
+            if (_arrow == null) return;
+            if (Application.isPlaying) Destroy(_arrow.gameObject);
+            else DestroyImmediate(_arrow.gameObject);
         }
 
         void Update()

@@ -9,7 +9,7 @@ namespace DigGame
     /// 이동은 중력 없이 입력에 즉시 반응하며, 땅과는 AABB 충돌로 막힌다.
     /// 지상에서는 화면 위로 더 올라갈 수 없고, 파낸 통로 안에서는 네 방향으로 자유 이동한다.
     /// </summary>
-    public class PlayerController : MonoBehaviour
+    public class PlayerController : SpriteActor
     {
         /// <summary>충돌 상자 반너비. 한 칸보다 작아야 좁은 굴을 지나갈 수 있다.</summary>
         public const float HalfSize = GameConfig.PlayerScale * 0.45f;
@@ -113,13 +113,11 @@ namespace DigGame
             Cell = WorldGrid.WorldToCell(transform.position);
             _lastCell = Cell;
 
-            _sr = gameObject.AddComponent<SpriteRenderer>();
+            _sr = ActorRenderer;
             var walkFrames = PlayerSpriteCatalog.Frames(PlayerVisualState.Walk, Facing.Down);
             _sr.sprite = walkFrames.Length > 0
                 ? walkFrames[0]
                 : SpriteFactory.Framed(new Color32(245, 245, 250, 255), new Color32(210, 70, 70, 255));
-            _sr.sortingOrder = WorldView.PlayerSortingOrder;
-            transform.localScale = Vector3.one * (GameConfig.PlayerScale * 1.18f);
 
             CancelDig();
         }

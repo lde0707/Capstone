@@ -17,6 +17,9 @@ namespace DigGame
     {
         public static GameManager Instance { get; private set; }
 
+        [SerializeField] GamePrefabCatalog _prefabCatalog;
+        public IGameObjectFactory Prefabs { get; private set; }
+
         public WorldGrid Grid { get; private set; }
         public WorldView View { get; private set; }
         public PlayerController Player { get; private set; }
@@ -97,8 +100,10 @@ namespace DigGame
         int _workerSeed;
 
         // ==================================================================
-        public void StartGame(int seed, bool configureCamera = true)
+        public void StartGame(int seed, bool configureCamera = true, IGameObjectFactory factory = null)
         {
+            Prefabs = factory ?? new PrefabGameObjectFactory(_prefabCatalog != null
+                ? _prefabCatalog : Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath));
             Instance = this;
             Seed = seed;
             _workerSeed = seed * 31 + 7;
@@ -140,7 +145,7 @@ namespace DigGame
             var viewGo = new GameObject("WorldView");
             viewGo.transform.SetParent(transform, false);
             View = viewGo.AddComponent<WorldView>();
-            View.Build(Grid);
+            View.Build(Grid, Prefabs);
             View.ShowBuilding(BuildingRect);
             // 공용 투입구는 처음부터 존재하고, 구매 업그레이드는 판매 배율만 강화한다.
             View.ShowRecycleStation(RecycleRect, RecycleLevel);
@@ -151,13 +156,11 @@ namespace DigGame
             Village = gameObject.AddComponent<Village>();
             Village.Build(this);
 
-            var playerGo = new GameObject("Player");
-            playerGo.transform.SetParent(transform, false);
-            Player = playerGo.AddComponent<PlayerController>();
+            Player = Prefabs.Create<PlayerController>(PrefabId.Player, transform, "Player");
             Player.Init(this, SurfaceDropCell);
 
             if (configureCamera)
-                SetupCamera(playerGo.transform);
+                SetupCamera(Player.transform);
             View.UpdateFog(Player.transform.position, VisionRadius, VisionFadeRadius);
 
             Log($"정착 지원금 {GameConfig.StartingMoney:N0}원 지급. 지상 입구 아래 쓰레기부터 수거하자!");
@@ -197,23 +200,13 @@ namespace DigGame
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.transform.position = target.position + new Vector3(0, 0, -10f);
 
-            var old = cam.GetComponent<CameraFollow>();
-            if (old != null) Destroy(old);
-
-            var oldSky = cam.GetComponent<SkyCycle>();
-            if (oldSky != null) Destroy(oldSky);
-
-            var follow = cam.gameObject.AddComponent<CameraFollow>();
+            // Destroy는 프레임 끝에 처리되므로 즉시 재추가하면 DisallowMultipleComponent와 충돌한다.
+            // 카메라 컴포넌트는 재사용하고 각 Setup이 이전 세션의 표현 리소스를 정리한다.
+            var follow = cam.GetComponent<CameraFollow>() ?? cam.gameObject.AddComponent<CameraFollow>();
             follow.Setup(target, Grid);
-
-            var oldBackdrop = cam.GetComponent<ParallaxBackdrop>();
-            if (oldBackdrop != null) Destroy(oldBackdrop);
-
-            var sky = cam.gameObject.AddComponent<SkyCycle>();
+            var sky = cam.GetComponent<SkyCycle>() ?? cam.gameObject.AddComponent<SkyCycle>();
             sky.Setup(cam, this);
-
-            // 하늘과 땅 사이의 원경 — 시대마다 통째로 갈린다.
-            var backdrop = cam.gameObject.AddComponent<ParallaxBackdrop>();
+            var backdrop = cam.GetComponent<ParallaxBackdrop>() ?? cam.gameObject.AddComponent<ParallaxBackdrop>();
             backdrop.Setup(cam, this);
         }
 
@@ -367,7 +360,7 @@ namespace DigGame
 
             int wages = 0;
             foreach (var w in Workers)
-                wages += w.Kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
+                wages += w.Wage;
 
             if (wages > 0)
             {
@@ -422,7 +415,7 @@ namespace DigGame
                 var w = Workers[Workers.Count - 1];
                 Workers.RemoveAt(Workers.Count - 1);
                 w.DumpCargoToMine();   // 화물은 광산에 두고 떠난다
-                wages -= w.Kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
+                wages -= w.Wage;
                 if (w.Kind == WorkerKind.Miner) w.Mine.Miners--;
                 else w.Mine.Haulers--;
                 Destroy(w.gameObject);
@@ -818,9 +811,7 @@ namespace DigGame
             NotifyPlayerMoved();
 
             if (kind == PetKind.None) return;
-            var go = new GameObject("Pet_" + kind);
-            go.transform.SetParent(transform, false);
-            _petObj = go.AddComponent<PetCompanion>();
+            _petObj = Prefabs.Create<PetCompanion>(PrefabId.Pet, transform, "Pet_" + kind);
             _petObj.Init(this, kind);
         }
 
@@ -914,10 +905,9 @@ namespace DigGame
             int wage = kind == WorkerKind.Miner ? GameConfig.MinerWage : GameConfig.HaulerWage;
             if (!TrySpend(cost, "일꾼 고용")) return;
 
-            var go = new GameObject(kind == WorkerKind.Miner ? "Miner" : "Hauler");
-            go.transform.SetParent(transform, false);
-            var w = go.AddComponent<Worker>();
-            w.Init(this, kind, mine, _workerSeed++);
+            var id = kind == WorkerKind.Miner ? PrefabId.Miner : PrefabId.Hauler;
+            var w = Prefabs.Create<Worker>(id, transform, kind.ToString());
+            w.Init(this, mine, _workerSeed++);
             Workers.Add(w);
 
             if (kind == WorkerKind.Miner) mine.Miners++;
@@ -961,54 +951,6 @@ namespace DigGame
             int start = Mathf.Max(0, _log.Count - count);
             for (int i = start; i < _log.Count; i++) result.Add(_log[i]);
             return result;
-        }
-    }
-
-    /// <summary>플레이어를 항상 따라다니는 카메라.</summary>
-    public class CameraFollow : MonoBehaviour
-    {
-        Transform _target;
-        WorldGrid _grid;
-        Camera _cam;
-
-        public void Setup(Transform target, WorldGrid grid)
-        {
-            _target = target;
-            _grid = grid;
-            _cam = GetComponent<Camera>();
-
-            if (_target != null)
-                transform.position = new Vector3(_target.position.x, _target.position.y, -10f);
-        }
-
-        void LateUpdate()
-        {
-            if (_target == null || _cam == null) return;
-
-            float halfH = _cam.orthographicSize;
-            float halfW = halfH * _cam.aspect;
-
-            Vector3 p = _target.position;
-
-            float worldWidth = _grid.Width * GameConfig.CellSize;
-            float worldHeight = _grid.Height * GameConfig.CellSize;
-            float minX = halfW, maxX = worldWidth - halfW;
-            float x = maxX > minX ? Mathf.Clamp(p.x, minX, maxX) : worldWidth * 0.5f;
-
-            float minY = -worldHeight + halfH;
-            float y = Mathf.Max(p.y, minY);
-
-            Vector3 want = new Vector3(x, y, -10f);
-
-            if ((transform.position - want).sqrMagnitude >
-                GameConfig.CameraSnapDistance * GameConfig.CameraSnapDistance)
-            {
-                transform.position = want;
-                return;
-            }
-
-            transform.position = Vector3.Lerp(
-                transform.position, want, 1f - Mathf.Exp(-GameConfig.CameraLerp * Time.deltaTime));
         }
     }
 }

@@ -32,7 +32,7 @@ namespace DigGame
         SkyCycle _sky;
         float _time;
 
-        public void Setup(Village village, Transform parent, int count)
+        public void Setup(Village village, Transform parent, int count, IGameObjectFactory factory)
         {
             _village = village;
             transform.SetParent(parent, false);
@@ -43,10 +43,9 @@ namespace DigGame
 
             for (int i = 0; i < count; i++)
             {
-                var go = new GameObject($"Wisp#{i}");
-                go.transform.SetParent(transform, false);
+                var go = factory.Create<SpriteRenderer>(PrefabId.Wisp, transform, $"Wisp#{i}").gameObject;
 
-                var sr = go.AddComponent<SpriteRenderer>();
+                var sr = go.GetComponent<SpriteRenderer>();
                 sr.sprite = SpriteFactory.Diamond(Color.white);
                 sr.sortingOrder = Village.OrderVillager + 3;
 

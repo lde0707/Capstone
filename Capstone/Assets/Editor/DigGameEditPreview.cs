@@ -114,6 +114,8 @@ namespace DigGame.Editor
 
         static void BuildPreview()
         {
+            if (UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() != null ||
+                Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath) == null) return;
             if (_building || EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
                 return;
 
@@ -137,7 +139,8 @@ namespace DigGame.Editor
                 preview.transform.SetParent(sceneRoot.transform, false);
 
                 var game = preview.AddComponent<GameManager>();
-                game.StartGame(PreviewSeed, configureCamera: false);
+                game.StartGame(PreviewSeed, configureCamera: false,
+                    factory: new EditorPrefabFactory(Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath)));
 
                 var hud = preview.AddComponent<GameHUD>();
                 hud.Init(game);
@@ -285,7 +288,8 @@ namespace DigGame.Editor
             string[] pixelRefreshTextures =
             {
                 "Ground/tileset1", "Ground/tileset2", "Ground/tileset4",
-                "Ground/tileset5", "Ground/tileset6", "Factory/recycler_factory",
+                "Ground/tileset5", "Ground/tileset6", "Era/era_dropoffs", "Era/era_shops",
+                "Era/era_houses", "Era/era_restorers",
                 "Products/recycled_products", "Player/hero_down", "Player/hero_up",
                 "Player/hero_side", "Player/hero_dig_down", "Player/hero_dig_up",
                 "Player/hero_dig_side"
@@ -350,8 +354,14 @@ namespace DigGame.Editor
             if (originalKindGrid.OriginalGroundAt(0, 0) != TileKind.Clay)
                 throw new System.InvalidOperationException("굴착 전 지층 종류가 보존되지 않았습니다.");
 
-            if (EnvironmentSpriteCatalog.RecyclerFactory() == null ||
-                EnvironmentSpriteCatalog.RecycledProduct(MaterialKind.General) == null ||
+            // 현재 시설은 시대별 아트를 사용한다. 삭제된 구형 공장 파일을 요구하지 않는다.
+            for (int era = 0; era < VillageSpriteCatalog.EraCount; era++)
+            {
+                if (VillageSpriteCatalog.EraDropoff(era) == null || VillageSpriteCatalog.EraShop(era) == null ||
+                    VillageSpriteCatalog.EraHouse(era) == null || VillageSpriteCatalog.EraRestorer(era) == null)
+                    throw new System.InvalidOperationException($"{era}시대 시설 스프라이트 연결이 누락되었습니다.");
+            }
+            if (EnvironmentSpriteCatalog.RecycledProduct(MaterialKind.General) == null ||
                 EnvironmentSpriteCatalog.RecycledProduct(MaterialKind.Relic) == null)
                 throw new System.InvalidOperationException("분리수거장 픽셀 이미지를 만들지 못했습니다.");
 
