@@ -73,6 +73,18 @@ namespace DigGame.Editor
             Send(Key.D); yield return null;
             Check(game.Player.transform.position!=position,"Movement not restored after close");
             Send();
+
+            var pool=(PooledGameObjectFactory)game.Prefabs;
+            var effect=pool.Create<RecyclingOutputFx>(PrefabId.RecyclingOutput,game.transform);
+            yield return new WaitForSeconds(2f);
+            Check(effect!=null && !effect.gameObject.activeSelf,"Expired effect was not returned to pool");
+            int reused=pool.ReusedCount;
+            effect=pool.Create<RecyclingOutputFx>(PrefabId.RecyclingOutput,game.transform);
+            Check(pool.ReusedCount==reused+1 && effect.GetComponent<SpriteRenderer>().color.a==1f,"Effect reuse did not reset alpha");
+            yield return new WaitForSeconds(.2f);
+            Check(effect.gameObject.activeSelf,"Reused effect retained expired lifetime");
+            effect.Release();
+            Debug.Log("[DigGame] RUNTIME_POOL_PLAYMODE_PASSED: expiry returns to pool; reused alpha/lifetime reset.");
             Debug.Log("[DigGame] RECYCLING_INPUT_VALIDATION_PASSED: real frames E/F, movement/tools/hiring lock, simultaneous keys, transition lock, Escape/resume, completion and restored movement.");
         }
         void Send(params Key[] keys)

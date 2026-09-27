@@ -30,6 +30,7 @@ namespace DigGame.Editor
                 finally { UnityEngine.Object.DestroyImmediate(go); }
             }
 
+            RecyclingAssets.MigratePanel();
             var catalog = AssetDatabase.LoadAssetAtPath<GamePrefabCatalog>(CatalogPath);
             if (catalog == null)
             {

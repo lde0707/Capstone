@@ -8,16 +8,20 @@ namespace DigGame
 
     public sealed class RecyclingQueue
     {
-        readonly List<LootItem> _items = new List<LootItem>();
+        readonly Queue<LootItem> _items = new Queue<LootItem>();
         public int Count => _items.Count;
-        public void Enqueue(IEnumerable<LootItem> items) => _items.AddRange(items);
+        public void Enqueue(IEnumerable<LootItem> items)
+        { foreach (var item in items) _items.Enqueue(item); }
         public bool TryPeek(int offset, out LootItem item)
         {
             item = default;
             if (offset < 0 || offset >= Count) return false;
-            item = _items[offset]; return true;
+            int index = 0;
+            foreach (var candidate in _items)
+                if (index++ == offset) { item = candidate; return true; }
+            return false;
         }
-        internal LootItem RemoveFirst() { var item = _items[0]; _items.RemoveAt(0); return item; }
+        internal LootItem RemoveFirst() => _items.Dequeue();
     }
 
     public sealed class PollutionMeter

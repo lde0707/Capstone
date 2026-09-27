@@ -13,11 +13,13 @@ namespace DigGame
         {
             public readonly string Path;
             public readonly int FrameWidth;
+            public readonly string CacheKey;
 
             public ArtRef(string file, int frameWidth = 0)
             {
                 Path = Root + file;
                 FrameWidth = frameWidth;
+                CacheKey = Path + "#" + frameWidth;
             }
         }
 
@@ -131,7 +133,7 @@ namespace DigGame
         static Sprite Load(ArtRef art)
         {
             if (string.IsNullOrEmpty(art.Path)) return null;
-            string cacheKey = art.Path + "#" + art.FrameWidth;
+            string cacheKey = art.CacheKey;
             if (Cache.TryGetValue(cacheKey, out var cached)) return cached;
 
             var texture = Resources.Load<Texture2D>(art.Path);

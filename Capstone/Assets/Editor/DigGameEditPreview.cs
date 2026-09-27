@@ -117,6 +117,8 @@ namespace DigGame.Editor
             if (UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() != null ||
                 (Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath) == null ||
                  !Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath).Contains(PrefabId.RecyclingStation))) return;
+            var station = Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath).Get(PrefabId.RecyclingStation);
+            if (new SerializedObject(station.GetComponent<RecyclingMinigameController>()).FindProperty("_viewPrefab").objectReferenceValue == null) return;
             if (_building || EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
                 return;
 

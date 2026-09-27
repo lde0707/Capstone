@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace DigGame
 {
     /// <summary>집이 업그레이드될 때 터지는 빛기둥과 반짝이.</summary>
-    public class VillageUpgradeFx : MonoBehaviour
+    public class VillageUpgradeFx : PooledEffect
     {
         [SerializeField] SpriteRenderer _beam;
         [SerializeField] SpriteRenderer[] _sparkRenderers;
@@ -25,6 +25,8 @@ namespace DigGame
         void Setup()
         {
             _life = _duration;
+            _sparks.Clear();
+            _velocities.Clear();
 
             if (_beam == null || _sparkRenderers == null)
                 throw new System.InvalidOperationException("UpgradeEffect 프리팹 연결이 누락되었습니다.");
@@ -73,7 +75,7 @@ namespace DigGame
                 sr.color = c;
             }
 
-            if (_life <= 0f) Destroy(gameObject);
+            if (_life <= 0f) Release();
         }
     }
 }

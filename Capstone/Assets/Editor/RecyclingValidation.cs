@@ -76,7 +76,7 @@ namespace DigGame.Editor
                 var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(PrefabAssets.PathFor(PrefabId.RecyclingStation));
                 var data=new SerializedObject(prefab.GetComponent<RecyclingAudioFeedback>());
                 Check(data.FindProperty("_success").objectReferenceValue!=null && data.FindProperty("_failure").objectReferenceValue!=null,"Audio references missing");
-                Check(prefab.GetComponentInChildren<RecyclingMinigameUI>()!=null,"View missing");
+                Check(new SerializedObject(prefab.GetComponent<RecyclingMinigameController>()).FindProperty("_viewPrefab").objectReferenceValue!=null,"View prefab missing");
             }
             finally { UnityEngine.Object.DestroyImmediate(root); UnityEngine.Random.state=previousRandom; }
             Debug.Log("[DigGame] RECYCLING_VALIDATION_PASSED: five categories, FIFO, rewards, mistakes, clamp, lock, resume, specialist, proximity, modal, day retention, audio references.");

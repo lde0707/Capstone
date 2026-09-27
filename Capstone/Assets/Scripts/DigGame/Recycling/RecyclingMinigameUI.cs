@@ -5,8 +5,8 @@ namespace DigGame
     public sealed class RecyclingMinigameUI : MonoBehaviour
     {
         RecyclingMinigameController _controller;
-        GUIStyle _label, _title, _button;
-        static readonly string[] Names = { "캔", "페트병", "종이", "플라스틱", "알루미늄" };
+        GUIStyle _label, _title, _button, _cardLabel;
+        static readonly string[] ButtonLabels = { "1\n캔", "2\n페트병", "3\n종이", "4\n플라스틱", "5\n알루미늄" };
         public void Bind(RecyclingMinigameController controller) => _controller = controller;
         void OnGUI()
         {
@@ -15,6 +15,7 @@ namespace DigGame
             {
                 var font = _controller.Game.Hud != null ? _controller.Game.Hud.UIFont : null;
                 _label = new GUIStyle(GUI.skin.label) { font = font, fontSize = 19, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+                _cardLabel = new GUIStyle(_label);
                 _title = new GUIStyle(_label) { fontSize = 32, fontStyle = FontStyle.Bold };
                 _button = new GUIStyle(GUI.skin.button) { font = font, fontSize = 20, wordWrap = true };
             }
@@ -58,7 +59,7 @@ namespace DigGame
                 GUI.Label(new Rect(50,485,900,45),message,_label);
                 GUI.enabled = !moving;
                 for (int i=0;i<5;i++)
-                    if (GUI.Button(new Rect(55+i*180,550,170,70),$"{i+1}\n{Names[i]}",_button))
+                    if (GUI.Button(new Rect(55+i*180,550,170,70),ButtonLabels[i],_button))
                         _controller.Submit((RecyclingCategory)(i+1));
                 GUI.enabled = true;
                 GUI.Label(new Rect(60,635,880,35),"분류 중에도 마감 시간은 진행됩니다 · Esc로 나가도 남은 물건은 보관됩니다",_label);
@@ -77,8 +78,8 @@ namespace DigGame
                 var image=new Rect(rect.center.x-pixels.width*fit/2,rect.y+18,pixels.width*fit,pixels.height*fit);
                 GUI.DrawTextureWithTexCoords(image,sprite.texture,new Rect(pixels.x/sprite.texture.width,pixels.y/sprite.texture.height,pixels.width/sprite.texture.width,pixels.height/sprite.texture.height));
             }
-            var style=new GUIStyle(_label){fontSize=rect.width<200 ? 15 : 21};
-            GUI.Label(new Rect(rect.x+8,rect.yMax-55,rect.width-16,50),item.Name,style);
+            _cardLabel.fontSize=rect.width<200 ? 15 : 21;
+            GUI.Label(new Rect(rect.x+8,rect.yMax-55,rect.width-16,50),item.Name,_cardLabel);
             GUI.color=old;
         }
         static void Fill(Rect rect,Color color)

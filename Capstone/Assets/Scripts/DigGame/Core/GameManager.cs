@@ -103,8 +103,9 @@ namespace DigGame
         // ==================================================================
         public void StartGame(int seed, bool configureCamera = true, IGameObjectFactory factory = null)
         {
-            Prefabs = factory ?? new PrefabGameObjectFactory(_prefabCatalog != null
-                ? _prefabCatalog : Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath));
+            Prefabs = factory ?? new PooledGameObjectFactory(
+                new PrefabGameObjectFactory(_prefabCatalog != null
+                    ? _prefabCatalog : Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath)), transform);
             Instance = this;
             Seed = seed;
             _workerSeed = seed * 31 + 7;

@@ -31,8 +31,7 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 3048750418344455390}
+  m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &4561042299563443884
@@ -48,7 +47,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DigGame.RecyclingMinigameController
   _settings: {fileID: 11400000, guid: 8ec3c72f3bbe57d4ba709a55059439dd, type: 2}
-  _view: {fileID: 5065868262637988403}
+  _viewPrefab: {fileID: 3143925013984879541, guid: 9629253a90334584897c14ca21ee05b9, type: 3}
   _feedback: {fileID: 5622720276454388423}
 --- !u!82 &1072821228119153105
 AudioSource:
@@ -162,47 +161,3 @@ MonoBehaviour:
   _success: {fileID: 8300000, guid: 37d2aa96b8d611e43a587859d8365b1a, type: 3}
   _failure: {fileID: 8300000, guid: 71eee5fac2d2a0f4488de56821c43811, type: 3}
   _volume: 0.35
---- !u!1 &1759813396668848888
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 3048750418344455390}
-  - component: {fileID: 5065868262637988403}
-  m_Layer: 0
-  m_Name: MinigamePanel
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &3048750418344455390
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1759813396668848888}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 8427846429580061671}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5065868262637988403
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1759813396668848888}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c4eaeecf5145a804ca34bdc4a84fc633, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DigGame.RecyclingMinigameUI

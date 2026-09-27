@@ -32,6 +32,7 @@ namespace DigGame.Editor
                 throw new InvalidOperationException("편집 모드에서 검증을 시작하세요.");
             PrefabValidation.Run();
             RecyclingValidation.Run();
+            RuntimeOptimizationValidation.Run();
             DigGameEditPreview.ValidatePreview();
             SessionState.SetBool(ErrorKey, false);
             SessionState.SetBool(ActiveKey, true);
@@ -93,6 +94,8 @@ namespace DigGame.Editor
                 }
                 else if (_phase == 1)
                 {
+                    Require(game.GetComponentsInChildren<RecyclingMinigameUI>(true).Length == 0, "재시작 후 UI가 미리 생성되었습니다.");
+                    Require(game.transform.Find("RuntimeEffectPool") != null, "새 게임 효과 풀 누락.");
                     Require(game.Recycling.Session.Queue.Count == 0 && game.Recycling.Session.Pollution.Value == 0, "재시작 시 분리수거 상태 초기화 실패.");
                     Require(game.GetInstanceID() != _previousInstance && game.Day == 1, "새 게임 재시작 실패.");
                     Require(UnityEngine.Object.FindObjectsByType<ParallaxBackdrop>(FindObjectsSortMode.None).Length == 1,
