@@ -115,9 +115,10 @@ namespace DigGame
         public Color Color;
         public int Volume;            // 가방에서 차지하는 부피
         public MaterialKind Material;
+        public RecyclingCategory Category { get; private set; }
         public bool Broken;           // 유리가 깨졌는가
 
-        public LootItem(string name, int value, Color color, int volume, MaterialKind material)
+        public LootItem(string name, int value, Color color, int volume, MaterialKind material, RecyclingCategory category = RecyclingCategory.Specialist)
         {
             Name = name;
             Value = value;
@@ -125,6 +126,7 @@ namespace DigGame
             Volume = Mathf.Max(1, volume);
             Material = material;
             Broken = false;
+            Category = category;
         }
     }
 

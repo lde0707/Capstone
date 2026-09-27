@@ -107,6 +107,8 @@ namespace DigGame
 
         public static Sprite For(LootItem item)
         {
+            Sprite illustration = RecyclingItemSprites.For(item);
+            if (illustration != null) return illustration;
             ArtRef art = FindByName(item.Name);
             if (string.IsNullOrEmpty(art.Path))
             {

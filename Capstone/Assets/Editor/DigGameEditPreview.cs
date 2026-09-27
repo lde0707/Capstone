@@ -115,7 +115,8 @@ namespace DigGame.Editor
         static void BuildPreview()
         {
             if (UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() != null ||
-                Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath) == null) return;
+                (Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath) == null ||
+                 !Resources.Load<GamePrefabCatalog>(GamePrefabCatalog.ResourcePath).Contains(PrefabId.RecyclingStation))) return;
             if (_building || EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
                 return;
 

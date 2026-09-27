@@ -16,23 +16,26 @@ namespace DigGame
             public MaterialKind Material;
             public float Shade;
             public float Weight;
+            public RecyclingCategory Category;
 
-            public Entry(string n, int v, int vol, MaterialKind m, float shade, float w)
+            public Entry(string n, int v, int vol, MaterialKind m, float shade, float w, RecyclingCategory category = RecyclingCategory.Specialist)
             {
-                Name = n; BaseValue = v; Volume = vol; Material = m; Shade = shade; Weight = w;
+                Name = n; BaseValue = v; Volume = vol; Material = m; Shade = shade; Weight = w; Category = category;
             }
         }
 
         // ---------- 1층: 최근 매립층 — 생활 쓰레기 ----------
         static readonly Entry[] SurfaceLoot =
         {
-            new Entry("비닐 뭉치",     15,  1, MaterialKind.General,     0.62f, 5f),
-            new Entry("찌그러진 캔",   35,  1, MaterialKind.Metal,       0.75f, 4f),
+            new Entry("종이 묶음", 45, 1, MaterialKind.General, .9f, 3f, RecyclingCategory.Paper),
+            new Entry("알루미늄 포일", 55, 1, MaterialKind.Metal, 1f, 2f, RecyclingCategory.Aluminum),
+            new Entry("비닐 뭉치",     15,  1, MaterialKind.General,     0.62f, 5f, RecyclingCategory.Plastic),
+            new Entry("찌그러진 캔",   35,  1, MaterialKind.Metal,       0.75f, 4f, RecyclingCategory.Can),
             new Entry("소주병",        50,  1, MaterialKind.Glass,       0.88f, 3f),
-            new Entry("알루미늄 휘장", 85,  1, MaterialKind.Metal,       0.96f, 2.4f),
+            new Entry("알루미늄 휘장", 85,  1, MaterialKind.Metal,       0.96f, 2.4f, RecyclingCategory.Aluminum),
             new Entry("중고 스마트폰", 180, 1, MaterialKind.Electronics, 1.10f, 1.4f),
             new Entry("기념 은화",     280, 1, MaterialKind.Relic,       1.24f, 0.7f),
-            new Entry("페트병 더미",   45,  2, MaterialKind.Plastic,     1.00f, 3f),
+            new Entry("페트병 더미",   45,  2, MaterialKind.Plastic,     1.00f, 3f, RecyclingCategory.Pet),
             new Entry("고장난 라디오", 140, 2, MaterialKind.Electronics, 1.15f, 1.5f),
             new Entry("옛날 동전",     220, 1, MaterialKind.Relic,       1.25f, 0.5f),
         };
@@ -40,15 +43,18 @@ namespace DigGame
         // 시작 지점 보장 배치용. 재활용하면 첫날 할당량 대부분을 안정적으로 채운다.
         static readonly Entry[] StarterLoot =
         {
-            new Entry("재활용 비닐 묶음", 35, 1, MaterialKind.General, 0.68f, 5f),
-            new Entry("분리수거 캔",     45, 1, MaterialKind.Metal,   0.82f, 4f),
+            new Entry("종이 묶음", 50, 1, MaterialKind.General, .9f, 3f, RecyclingCategory.Paper),
+            new Entry("페트병", 50, 1, MaterialKind.Plastic, 1f, 3f, RecyclingCategory.Pet),
+            new Entry("알루미늄 포일", 50, 1, MaterialKind.Metal, 1f, 3f, RecyclingCategory.Aluminum),
+            new Entry("재활용 비닐 묶음", 35, 1, MaterialKind.General, 0.68f, 5f, RecyclingCategory.Plastic),
+            new Entry("분리수거 캔",     45, 1, MaterialKind.Metal,   0.82f, 4f, RecyclingCategory.Can),
             new Entry("반납용 유리병",   55, 1, MaterialKind.Glass,   0.96f, 3f),
         };
 
         // ---------- 2층: 90년대 층 — 가전 ----------
         static readonly Entry[] ShallowLoot =
         {
-            new Entry("카세트테이프",    70,  1, MaterialKind.Plastic,     0.58f, 4f),
+            new Entry("카세트테이프",    70,  1, MaterialKind.Plastic,     0.58f, 4f, RecyclingCategory.Plastic),
             new Entry("워크맨",          180, 1, MaterialKind.Electronics, 0.72f, 3.0f),
             new Entry("휴대용 게임기",   300, 1, MaterialKind.Electronics, 0.88f, 2.5f),
             new Entry("초기형 휴대전화", 480, 1, MaterialKind.Electronics, 1.02f, 1.8f),
@@ -56,7 +62,7 @@ namespace DigGame
             new Entry("한정판 게임팩",   950, 1, MaterialKind.Relic,       1.26f, 0.6f),
             new Entry("녹슨 자전거",    90,  3, MaterialKind.Metal,       0.62f, 4f),
             new Entry("깨진 어항",      130, 2, MaterialKind.Glass,       0.75f, 3f),
-            new Entry("장난감 상자",    160, 2, MaterialKind.Plastic,     0.88f, 3f),
+            new Entry("장난감 상자",    160, 2, MaterialKind.Plastic,     0.88f, 3f, RecyclingCategory.Plastic),
             new Entry("브라운관 TV",    380, 4, MaterialKind.Electronics, 1.00f, 2f),
             new Entry("오락기 기판",    550, 2, MaterialKind.Electronics, 1.15f, 1.2f),
             new Entry("금도금 시계",    800, 1, MaterialKind.Relic,       1.25f, 0.5f),
@@ -195,7 +201,7 @@ namespace DigGame
                 Mathf.RoundToInt(e.BaseValue * jitter),
                 Shaded(sig, e.Shade),
                 e.Volume,
-                e.Material);
+                e.Material, e.Category);
         }
 
         /// <summary>광산에서 나오는 고철. tier 0~4. 부피 1, 재질 고철.</summary>

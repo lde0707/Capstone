@@ -126,6 +126,11 @@ namespace DigGame
         {
             if (_game == null || !_game.IsRunning) return;
             float dt = Time.deltaTime;
+            if (_game.Recycling != null && _game.Recycling.InputCaptured)
+            {
+                CancelDig(); _moveInput = Vector2.zero;
+                TickSurvival(dt); UpdateVisual(dt); return;
+            }
 
             if (_blockedTimer > 0f)
             {
@@ -180,7 +185,7 @@ namespace DigGame
                 }
             }
 
-            if (kb.fKey.wasPressedThisFrame && Gear.EnergyDrinks > 0)
+            if (kb.fKey.wasPressedThisFrame && !_game.PlayerNearRecycle() && Gear.EnergyDrinks > 0)
             {
                 if (Stats.Stamina >= Stats.MaxStamina - 1f)
                 {

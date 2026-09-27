@@ -20,6 +20,13 @@ namespace DigGame
 
         [SerializeField] Entry[] _entries = Array.Empty<Entry>();
 
+        public bool Contains(PrefabId id)
+        {
+            foreach (var entry in _entries)
+                if (entry != null && entry.Id == id && entry.Prefab != null) return true;
+            return false;
+        }
+
         public GameObject Get(PrefabId id)
         {
             foreach (var entry in _entries)

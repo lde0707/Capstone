@@ -99,7 +99,7 @@ namespace DigGame.Editor
                 var previewFactory = new EditorPrefabFactory(catalog);
                 var resident = previewFactory.Create<Villager>(PrefabId.Villager, root.transform);
                 Require(PrefabUtility.IsPartOfPrefabInstance(resident.gameObject), "편집 미리보기의 프리팹 연결 실패.");
-                Debug.Log("[DigGame] PREFAB_VALIDATION_PASSED: 18 assets, initialization, isolated instances, miner income, hauler delivery/cargo, pets, relics, growth, effects, editor links.");
+                Debug.Log("[DigGame] PREFAB_VALIDATION_PASSED: 19 assets, initialization, isolated instances, miner income, hauler delivery/cargo, pets, relics, growth, effects, editor links.");
             }
             finally
             {

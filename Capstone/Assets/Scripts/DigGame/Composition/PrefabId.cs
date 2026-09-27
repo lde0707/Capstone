@@ -7,6 +7,6 @@ namespace DigGame
         RestoredRelic = 5, Treasure = 6, BuriedRelic = 7, VillageSprite = 8,
         Facility = 9, Sign = 10, CaveTile = 11, DetectorPing = 12,
         RecyclingOutput = 13, UpgradeEffect = 14, Wisp = 15,
-        BackdropTile = 16, PetArrow = 17
+        BackdropTile = 16, PetArrow = 17, RecyclingStation = 18
     }
 }

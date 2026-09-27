@@ -19,6 +19,7 @@ namespace DigGame
 
         [SerializeField] GamePrefabCatalog _prefabCatalog;
         public IGameObjectFactory Prefabs { get; private set; }
+        public RecyclingMinigameController Recycling { get; private set; }
 
         public WorldGrid Grid { get; private set; }
         public WorldView View { get; private set; }
@@ -158,6 +159,8 @@ namespace DigGame
 
             Player = Prefabs.Create<PlayerController>(PrefabId.Player, transform, "Player");
             Player.Init(this, SurfaceDropCell);
+            Recycling = Prefabs.Create<RecyclingMinigameController>(PrefabId.RecyclingStation, transform);
+            Recycling.Initialize(this);
 
             if (configureCamera)
                 SetupCamera(Player.transform);
@@ -264,6 +267,7 @@ namespace DigGame
                     return;
                 }
 
+                if (Recycling != null && Recycling.InputCaptured) return;
                 if (kb.eKey.wasPressedThisFrame) HandleInteract();
                 if (kb.escapeKey.wasPressedThisFrame && ShopOpen) ShopOpen = false;
 
@@ -309,6 +313,7 @@ namespace DigGame
 
         void DoEndDay()
         {
+            Recycling?.Close();
             ShopOpen = false;
             var lines = new List<string>();
             var gear = Player != null ? Player.Gear : null;
@@ -511,7 +516,7 @@ namespace DigGame
             }
             if (nearRecycle && Player.Inventory.Count > 0)
             {
-                RecycleAtFactory(Player.TakeAll());
+                Recycling.Deposit();
                 return;
             }
 
@@ -541,7 +546,7 @@ namespace DigGame
             }
             if (nearRecycle)
             {
-                Log("분리수거장에 버릴 쓰레기가 없다");
+                Recycling.Deposit();
                 return;
             }
 
@@ -920,6 +925,7 @@ namespace DigGame
         // ==================================================================
         public void GameOver(string reason)
         {
+            Recycling?.Close();
             // 낮에만 죽을 수 있다. (밤/결과 화면 중의 호출은 무시)
             if (State != GameState.Day) return;
             State = GameState.Lost;

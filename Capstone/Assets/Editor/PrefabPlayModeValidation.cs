@@ -16,6 +16,7 @@ namespace DigGame.Editor
         static double _deadline;
         static int _phase;
         static int _previousInstance;
+        static RecyclingInputProbe _inputProbe;
 
         static PrefabPlayModeValidation()
         {
@@ -30,6 +31,7 @@ namespace DigGame.Editor
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException("편집 모드에서 검증을 시작하세요.");
             PrefabValidation.Run();
+            RecyclingValidation.Run();
             DigGameEditPreview.ValidatePreview();
             SessionState.SetBool(ErrorKey, false);
             SessionState.SetBool(ActiveKey, true);
@@ -39,9 +41,11 @@ namespace DigGame.Editor
         static void StateChanged(PlayModeStateChange state)
         {
             if (!SessionState.GetBool(ActiveKey, false)) return;
+            if (state == PlayModeStateChange.ExitingPlayMode) _inputProbe?.Dispose();
             if (state == PlayModeStateChange.EnteredPlayMode)
             {
                 _phase = 0;
+                _inputProbe = null;
                 _nextCheck = EditorApplication.timeSinceStartup + 3;
                 _deadline = EditorApplication.timeSinceStartup + 90;
             }
@@ -73,6 +77,9 @@ namespace DigGame.Editor
                 if (_phase == 0)
                 {
                     Require(game.TimeLeft < GameConfig.DayLengthSeconds, "낮 타이머가 진행되지 않습니다.");
+                    if (_inputProbe == null) { _inputProbe = new RecyclingInputProbe(); game.StartCoroutine(_inputProbe.Run()); return; }
+                    if (!_inputProbe.Completed) return;
+                    Require(_inputProbe.Failure == null, _inputProbe.Failure);
                     var grid = game.Grid;
                     game.AddRelicIncome(game.BaseQuota, "Play 검증");
                     typeof(GameManager).GetMethod("DoEndDay", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(game, null);
@@ -86,6 +93,7 @@ namespace DigGame.Editor
                 }
                 else if (_phase == 1)
                 {
+                    Require(game.Recycling.Session.Queue.Count == 0 && game.Recycling.Session.Pollution.Value == 0, "재시작 시 분리수거 상태 초기화 실패.");
                     Require(game.GetInstanceID() != _previousInstance && game.Day == 1, "새 게임 재시작 실패.");
                     Require(UnityEngine.Object.FindObjectsByType<ParallaxBackdrop>(FindObjectsSortMode.None).Length == 1,
                         "재시작 후 배경 컴포넌트 중복.");

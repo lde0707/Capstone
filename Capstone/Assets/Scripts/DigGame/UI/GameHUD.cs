@@ -24,6 +24,7 @@ namespace DigGame
 
         GameManager _game;
         Font _font;
+        public Font UIFont => _font;
         GUIStyle _label, _small, _micro, _title, _big, _center, _button, _buttonSmall, _tab, _tabOn;
         GUIStyle _nameplate;
         Texture2D _white;
@@ -97,6 +98,8 @@ namespace DigGame
 
         void Update()
         {
+            if (_game != null && _game.Recycling != null && _game.Recycling.InputCaptured)
+            { _showCodex = false; return; }
             var kb = Keyboard.current;
             if (kb == null) return;
             if (kb.tabKey.wasPressedThisFrame) _showHelp = !_showHelp;
@@ -158,6 +161,7 @@ namespace DigGame
         void OnGUI()
         {
             if (_game == null || _game.Grid == null) return;
+            if (_game.Recycling != null && _game.Recycling.InputCaptured) return;
             EnsureStyles();
 
             switch (_game.State)
@@ -419,12 +423,12 @@ namespace DigGame
                 }
                 else if (nearRecycle && p.Inventory.Count > 0)
                 {
-                    text = $"[E] {p.Inventory.Count}개 재활용 · 예상 {_game.EstimateRecycledValue(p.Inventory):N0}원";
+                    text = $"[E] {p.Inventory.Count}개 보관 · [F] 분류 시작 (대기 {_game.Recycling.Session.Queue.Count}개)";
                     tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
                 }
                 else if (nearShop)
                 {
-                    text = "[E] 강화 (간이 상점)";
+                    text = nearRecycle ? $"[E] 강화 · [F] 분류 (대기 {_game.Recycling.Session.Queue.Count}개)" : "[E] 강화 (간이 상점)";
                     tint = new Color(0.10f, 0.14f, 0.08f, 0.82f);
                 }
                 else if (nearRestorer)
@@ -438,7 +442,7 @@ namespace DigGame
                 }
                 else if (nearRecycle)
                 {
-                    text = "투입소 · 가방이 비어 있음";
+                    text = $"[E] 가방 보관 · [F] 분류 시작 · 대기 {_game.Recycling.Session.Queue.Count}개";
                     tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
                 }
 
@@ -981,8 +985,8 @@ namespace DigGame
                 "WASD — 이동 + 마지막 입력 방향의 동·서·남·북 한 칸 조준",
                 "Space 길게 — 표시된 인접 한 칸을 판다",
                 "E — 스폰 왼쪽에 투입소·강화소·복원소가 나란히 있다",
-                "Q 탐지기 · B 귀환 벨 · F 드링크 (밤 상점에서 구입)",
-                "쓰레기는 지상 분리수거장 앞에서 E를 눌러야 판매된다",
+                "Q 탐지기 · B 귀환 벨 · F 드링크 (투입소에서는 분류 시작)",
+                "투입소 E 보관 → F 분류 → 1~5 선택 · Esc 나가기",
                 "파랑: 푸석한 흙 · 금색: 고가품이 든 압축 폐기물층",
                 "연두: 매립 가스층 — 방호복이 있으면 피해를 막는다",
                 "힘이 땅의 요구치보다 높으면 단계마다 굴착 속도 +35%",

@@ -14,6 +14,8 @@ namespace DigGame.Editor
         [MenuItem("DigGame/Prefabs/Create Missing Assets")]
         public static void CreateMissingAssets()
         {
+            Directory.CreateDirectory(Root + "/UI");
+            RecyclingAssets.EnsureSettings();
             Directory.CreateDirectory(Root + "/Actors");
             Directory.CreateDirectory(Root + "/World");
             Directory.CreateDirectory(Root + "/Effects");
@@ -61,12 +63,12 @@ namespace DigGame.Editor
             serialized.ApplyModifiedPropertiesWithoutUndo();
             AssetDatabase.SaveAssets();
             catalog.Validate();
-            Debug.Log("[DigGame] 프리팹 18종과 카탈로그 생성/검증 완료 (기존 편집 유지).");
+            Debug.Log("[DigGame] 프리팹 19종과 카탈로그 생성/검증 완료 (기존 편집 유지).");
         }
 
         public static string PathFor(PrefabId id)
         {
-            string group = (int)id <= (int)PrefabId.RestoredRelic ? "Actors"
+            string group = id == PrefabId.RecyclingStation ? "UI" : (int)id <= (int)PrefabId.RestoredRelic ? "Actors"
                 : id == PrefabId.RecyclingOutput || id == PrefabId.UpgradeEffect || id == PrefabId.Wisp
                     ? "Effects" : "World";
             return $"{Root}/{group}/{id}.prefab";
@@ -74,6 +76,7 @@ namespace DigGame.Editor
 
         static GameObject Build(PrefabId id)
         {
+            if (id == PrefabId.RecyclingStation) return RecyclingAssets.BuildPrefab();
             var go = new GameObject(id.ToString());
             if (id == PrefabId.UpgradeEffect)
             {
