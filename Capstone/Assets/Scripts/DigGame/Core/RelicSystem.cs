@@ -58,6 +58,16 @@ namespace DigGame
         public bool IsFound(int id) => _found != null && id >= 0 && id < _found.Length && _found[id];
         public bool IsRestored(int id) => _restored != null && id >= 0 && id < _restored.Length && _restored[id];
 
+        /// <summary>해당 지층에서 한 번 이상 발굴한 고유 유물 종류 수.</summary>
+        public int FoundInDepth(int depth)
+        {
+            var defs = RelicCatalog.OfDepth(depth);
+            int count = 0;
+            for (int i = 0; i < defs.Count; i++)
+                if (IsFound(defs[i].Id)) count++;
+            return count;
+        }
+
         /// <summary>대기열에 이미 들어가 있거나 등에 지고 있는가.</summary>
         public bool IsPending(int id)
         {
@@ -90,10 +100,12 @@ namespace DigGame
             var def = RelicCatalog.Get(relicId);
             if (def == null) return;
 
-            if (!_found[relicId])
+            bool newlyFound = !_found[relicId];
+            if (newlyFound)
             {
                 _found[relicId] = true;
                 FoundCount++;
+                _game.PickaxeQuests?.NotifyRelicFound(def);
             }
 
             // 이미 복원했거나 처리 중인 유물은 다시 복원할 이유가 없다 → 자동 환전
@@ -296,6 +308,144 @@ namespace DigGame
                 _queue.RemoveAt(0);
                 Complete(id);
             }
+        }
+    }
+
+    /// <summary>
+    /// 입구 근처 주민이 주는 지층별 집게 강화 퀘스트.
+    /// 유물은 복원이 아니라 '고유 종류 최초 발굴' 시점에 진행도로 센다.
+    /// </summary>
+    public sealed class PickaxeQuestSystem
+    {
+        static readonly string[] PickaxeNames =
+        { "낡은 집게", "철 집게", "강철 집게", "합금 집게", "최종형 집게" };
+
+        GameManager _game;
+        Villager _giver;
+        int _stage;
+        int _lastRewardDay;
+        bool _accepted;
+
+        public int Stage => _stage;
+        public int PickaxeTier => Mathf.Clamp(_stage + 1, 1, 5);
+        public string PickaxeName => PickaxeNames[PickaxeTier - 1];
+        public bool AllCompleted => _stage >= GameConfig.PickaxeQuestRelicCounts.Length;
+        public int TargetDepth => AllCompleted ? 4 : _stage + 1;
+        public int RequiredCount => AllCompleted ? 0 : GameConfig.PickaxeQuestRelicCounts[_stage];
+        public int Progress => AllCompleted || _game?.Relics == null
+            ? 0 : _game.Relics.FoundInDepth(TargetDepth);
+        public bool Accepted => _accepted;
+        public bool RewardAvailableToday => _lastRewardDay != _game.Day;
+        public Villager Giver => _giver;
+
+        public string ObjectiveText => AllCompleted
+            ? "모든 집게 퀘스트 완료"
+            : $"{TargetDepth}층 유물 {Progress}/{RequiredCount}종";
+
+        public string InteractionText
+        {
+            get
+            {
+                if (AllCompleted) return "집게 퀘스트 완료";
+                if (!_accepted) return $"[E] 집게 퀘스트 받기 · {TargetDepth}층 유물 {RequiredCount}종";
+                if (Progress < RequiredCount) return $"[E] 집게 퀘스트 확인 · {ObjectiveText}";
+                if (!RewardAvailableToday) return "[E] 집게 강화는 내일부터 가능";
+                return $"[E] 퀘스트 완료 · {PickaxeNames[Mathf.Min(PickaxeTier, 4)]} 받기";
+            }
+        }
+
+        public void Setup(GameManager game)
+        {
+            _game = game;
+            _stage = 0;
+            _lastRewardDay = 0;
+            _accepted = false;
+            AssignNextGiver(null);
+            _game.Log("땅굴 입구 근처의 <b>!</b> 주민이 집게 강화 퀘스트를 준다");
+        }
+
+        public bool PlayerNearGiver
+        {
+            get
+            {
+                if (_giver == null || _game?.Player == null) return false;
+                float range = GameConfig.PickaxeQuestInteractRange * GameConfig.CellSize;
+                return (_giver.transform.position - _game.Player.transform.position).sqrMagnitude <= range * range;
+            }
+        }
+
+        public bool TryInteract()
+        {
+            if (AllCompleted || !PlayerNearGiver) return false;
+
+            if (!_accepted)
+            {
+                _accepted = true;
+                _game.Log($"집게 퀘스트 시작 — <b>{TargetDepth}층 고유 유물 {RequiredCount}종</b>을 발굴하자 " +
+                    $"(현재 {Progress}/{RequiredCount})");
+                return true;
+            }
+
+            if (Progress < RequiredCount)
+            {
+                _game.Log($"집게 퀘스트 진행 — {ObjectiveText}");
+                return true;
+            }
+
+            if (!RewardAvailableToday)
+            {
+                _game.Log("집게 강화 퀘스트 보상은 하루에 한 번만 받을 수 있다 — 내일 다시 오자");
+                return true;
+            }
+
+            Villager previous = _giver;
+            int clearedDepth = TargetDepth;
+            _lastRewardDay = _game.Day;
+            _stage++;
+            _accepted = false;
+
+            previous?.SetPickaxeQuest(false, Vector3.zero);
+            _game.Log($"★ {clearedDepth}층 집게 퀘스트 완료! <b>{PickaxeName}</b> 획득 " +
+                (clearedDepth < 4
+                    ? $"— 이제 {clearedDepth + 1}층 땅을 팔 수 있다"
+                    : "— 모든 집게 퀘스트를 완료했다"));
+
+            if (!AllCompleted)
+            {
+                AssignNextGiver(previous);
+                _game.Log($"다른 주민에게 {TargetDepth}층 집게 퀘스트가 생겼다" +
+                    (RewardAvailableToday ? "" : " · 보상 수령은 내일부터 가능"));
+            }
+            else
+            {
+                _giver = null;
+            }
+            return true;
+        }
+
+        public bool CanDig(TileKind kind) =>
+            TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= Mathf.Min(4, PickaxeTier);
+
+        public void NotifyRelicFound(RelicDef def)
+        {
+            if (def == null || AllCompleted || !_accepted || def.Depth != TargetDepth) return;
+            int progress = Progress;
+            _game.Log(progress >= RequiredCount
+                ? $"집게 퀘스트 조건 달성! {ObjectiveText} — 퀘스트 주민에게 돌아가자"
+                : $"집게 퀘스트 진행 {progress}/{RequiredCount}종");
+        }
+
+        public void OnNewDay()
+        {
+            if (!AllCompleted && _accepted && Progress >= RequiredCount && RewardAvailableToday)
+                _game.Log("집게 퀘스트 보상을 받을 수 있다 — 입구 근처 퀘스트 주민을 찾아가자");
+        }
+
+        void AssignNextGiver(Villager previous)
+        {
+            _giver = _game.Village != null
+                ? _game.Village.AssignPickaxeQuestGiver(previous)
+                : null;
         }
     }
 }

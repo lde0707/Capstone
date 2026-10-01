@@ -2,38 +2,34 @@ using UnityEngine;
 
 namespace DigGame
 {
-    public enum StatKind { Health = 0, MoveSpeed = 1, Stamina = 2, Power = 3 }
+    public enum StatKind { MoveSpeed = 0, Stamina = 1, Power = 2 }
 
-    /// <summary>플레이어의 4가지 능력치와 업그레이드 단계.</summary>
+    /// <summary>플레이어의 이동·기력·굴착 속도 능력치와 업그레이드 단계.</summary>
     public class PlayerStats
     {
-        public int HealthLevel;
         public int MoveSpeedLevel;
         public int StaminaLevel;
         public int PowerLevel;
 
-        public float Health;
         public float Stamina;
 
         public PlayerStats()
         {
-            Health = MaxHealth;
             Stamina = MaxStamina;
         }
 
-        public float MaxHealth => GameConfig.BaseMaxHealth + HealthLevel * 25f;
         public float MoveSpeed => GameConfig.BaseMoveSpeed + MoveSpeedLevel * 0.9f;
         public float MaxStamina => GameConfig.BaseMaxStamina + StaminaLevel * 35f;
         public int Power => GameConfig.BasePower + PowerLevel;
+        public int DigSpeedBonusPercent => Mathf.RoundToInt(PowerLevel * GameConfig.PowerDigSpeedBonusPerLevel * 100f);
 
-        /// <summary>가방 용량 (부피). 힘·기력 강화로도 조금씩 늘어난다.</summary>
-        public int BagVolume => GameConfig.BaseBagVolume + PowerLevel * 2 + StaminaLevel * 2;
+        /// <summary>가방 용량 (부피). 힘은 굴착 속도만 올리므로 기력 강화만 용량에 영향을 준다.</summary>
+        public int BagVolume => GameConfig.BaseBagVolume + StaminaLevel * 2;
 
         public int LevelOf(StatKind k)
         {
             switch (k)
             {
-                case StatKind.Health: return HealthLevel;
                 case StatKind.MoveSpeed: return MoveSpeedLevel;
                 case StatKind.Stamina: return StaminaLevel;
                 default: return PowerLevel;
@@ -44,10 +40,6 @@ namespace DigGame
         {
             switch (k)
             {
-                case StatKind.Health:
-                    HealthLevel++;
-                    Health = MaxHealth;
-                    break;
                 case StatKind.MoveSpeed:
                     MoveSpeedLevel++;
                     break;
@@ -64,22 +56,25 @@ namespace DigGame
         public int CostOf(StatKind k)
         {
             int lv = LevelOf(k);
-            // 힘은 핵심 능력치라 훨씬 비싸다. (1.6 -> 2.4, 기존 대비 +50%)
-            float mult = k == StatKind.Power ? 2.4f : 1f;
-            return Mathf.RoundToInt(GameConfig.UpgradeBaseCost * mult *
-                                    Mathf.Pow(GameConfig.UpgradeCostGrowth, lv));
+            if (k == StatKind.Power)
+                return Mathf.RoundToInt(GameConfig.PowerUpgradeBaseCost *
+                    Mathf.Pow(GameConfig.PowerUpgradeCostGrowth, lv));
+            return Mathf.RoundToInt(GameConfig.UpgradeBaseCost *
+                Mathf.Pow(GameConfig.UpgradeCostGrowth, lv));
         }
 
-        public bool IsMaxed(StatKind k) => LevelOf(k) >= GameConfig.MaxUpgradeLevel;
+        public int MaxLevelOf(StatKind k) =>
+            k == StatKind.Power ? GameConfig.MaxPowerUpgradeLevel : GameConfig.MaxUpgradeLevel;
+
+        public bool IsMaxed(StatKind k) => LevelOf(k) >= MaxLevelOf(k);
 
         public static string DisplayName(StatKind k)
         {
             switch (k)
             {
-                case StatKind.Health: return "체력";
                 case StatKind.MoveSpeed: return "이동속도";
                 case StatKind.Stamina: return "기력";
-                default: return "힘";
+                default: return "힘(굴착 속도)";
             }
         }
 
@@ -87,10 +82,9 @@ namespace DigGame
         {
             switch (k)
             {
-                case StatKind.Health: return $"{MaxHealth:0}";
                 case StatKind.MoveSpeed: return $"{MoveSpeed:0.0}";
                 case StatKind.Stamina: return $"{MaxStamina:0}";
-                default: return $"{Power}";
+                default: return $"속도 +{DigSpeedBonusPercent}%";
             }
         }
 
@@ -99,10 +93,9 @@ namespace DigGame
         {
             switch (k)
             {
-                case StatKind.Health: return $"{GameConfig.BaseMaxHealth + (HealthLevel + 1) * 25f:0}";
                 case StatKind.MoveSpeed: return $"{GameConfig.BaseMoveSpeed + (MoveSpeedLevel + 1) * 0.9f:0.0}";
                 case StatKind.Stamina: return $"{GameConfig.BaseMaxStamina + (StaminaLevel + 1) * 35f:0}";
-                default: return $"{GameConfig.BasePower + PowerLevel + 1}";
+                default: return $"속도 +{Mathf.RoundToInt((PowerLevel + 1) * GameConfig.PowerDigSpeedBonusPerLevel * 100f)}%";
             }
         }
     }

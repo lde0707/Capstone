@@ -50,7 +50,7 @@ namespace DigGame
             {
                 case DigFeature.LooseSoil: return "빠르게 파고 기력을 절반만 사용";
                 case DigFeature.CompactCache: return "단단하지만 고가품이 들어 있음";
-                case DigFeature.GasPocket: return "방호복 없이 열면 체력·기력 감소";
+                case DigFeature.GasPocket: return "방호복 없이 열면 기력 감소";
                 default: return "";
             }
         }
@@ -196,7 +196,7 @@ namespace DigGame
 
     public static class TileInfo
     {
-        /// <summary>파는 데 필요한 최소 '힘'. 0이면 통과 가능, -1이면 파괴 불가.</summary>
+        /// <summary>파는 데 필요한 최소 집게 단계. 0이면 통과 가능, -1이면 파괴 불가.</summary>
         public static int RequiredPower(TileKind kind)
         {
             switch (kind)
@@ -218,16 +218,13 @@ namespace DigGame
         }
 
         /// <summary>
-        /// 요구 힘보다 강할수록 적용되는 굴착 시간 배율.
-        /// 요구 힘과 같으면 1배이며, 초과 힘 1마다 굴착 속도가 35%씩 증가한다.
+        /// 힘 강화는 지층 해금과 무관하며 모든 팔 수 있는 땅의 굴착 시간을 줄인다.
         /// </summary>
         public static float PowerDigDurationMultiplier(TileKind kind, int power)
         {
-            int required = RequiredPower(kind);
-            if (required <= 0 || power <= required) return 1f;
-
-            int surplus = power - required;
-            float speed = 1f + surplus * GameConfig.PowerDigSpeedBonusPerSurplus;
+            if (!IsDiggable(kind)) return 1f;
+            int level = Mathf.Max(0, power - GameConfig.BasePower);
+            float speed = 1f + level * GameConfig.PowerDigSpeedBonusPerLevel;
             return 1f / speed;
         }
 

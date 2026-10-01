@@ -126,6 +126,7 @@ namespace DigGame
 
         /// <summary>마을에 나와 있는 복원 유물들 (이름표를 띄울 때 읽는다).</summary>
         public IReadOnlyList<RelicUnit> RelicUnits => _relicUnits;
+        public IReadOnlyList<Villager> Villagers => _villagers;
 
         /// <summary>공룡 공원이 생기면 더 많은 유물이 동시에 돌아다닐 수 있다.</summary>
         int MaxWandering => GameConfig.MaxWanderingRelics
@@ -518,6 +519,44 @@ namespace DigGame
                 _villagerCount++;
                 _villagers.Add(v);
             }
+        }
+
+        /// <summary>
+        /// 다음 집게 퀘스트를 이전 주민과 다른 주민에게 맡긴다.
+        /// 퀘스트 주민은 최대 확장된 땅굴 입구 바로 오른쪽의 안전한 지상 칸으로 이동한다.
+        /// 기존 주민 오브젝트는 없애지 않으므로 시대가 바뀌어도 그대로 남는다.
+        /// </summary>
+        public Villager AssignPickaxeQuestGiver(Villager previous)
+        {
+            if (_villagers.Count < 2) AddVillagers(2 - _villagers.Count);
+
+            Villager best = null;
+            float entranceX = (_centerX + GameConfig.SurfaceEntranceOffsetX + 0.5f) * GameConfig.CellSize;
+            float bestDistance = float.MaxValue;
+            for (int i = 0; i < _villagers.Count; i++)
+            {
+                var candidate = _villagers[i];
+                if (candidate == null || candidate == previous) continue;
+                float distance = Mathf.Abs(candidate.transform.position.x - entranceX);
+                if (distance < bestDistance)
+                {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            if (best == null)
+            {
+                AddVillagers(1);
+                if (_villagers.Count > 0) best = _villagers[_villagers.Count - 1];
+            }
+            if (best == null) return null;
+
+            int standX = _centerX + GameConfig.SurfaceEntranceOffsetX
+                + GameConfig.MaxEntranceWidenLevel + 1;
+            while (standX < _grid.Width - 2 && !CanStandOn(standX)) standX++;
+            best.SetPickaxeQuest(true, StandOn(standX));
+            return best;
         }
 
         /// <summary>

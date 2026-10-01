@@ -3,8 +3,7 @@ using UnityEngine;
 namespace DigGame
 {
     /// <summary>
-    /// 지상을 어슬렁거리는 마을 주민. 상호작용은 없고, 걷다가 가끔 멈춰 선다.
-    /// (지금은 분위기 담당 — 마을이 살아 있다는 신호)
+    /// 지상을 어슬렁거리는 마을 주민. 집게 퀘스트를 맡으면 입구 근처를 돌아다닌다.
     /// </summary>
     public class Villager : SpriteActor
     {
@@ -23,12 +22,15 @@ namespace DigGame
         float _stateTimer;
         bool _walking = true;
         float _animTime;
+        float _questAnchorX;
 
         /// <summary>이 주민이 어느 시대 옷을 입고 있는지.</summary>
         public int Era => _era;
         /// <summary>주민 종류 (시대 안에서의 번호).</summary>
         public int Kind => _kind;
         public string DisplayName => VillageSpriteCatalog.EraVillagerName(_era, _kind);
+        public bool HasPickaxeQuest { get; private set; }
+        public float QuestLabelWorldY => transform.position.y + GameConfig.PlayerScale * 1.15f;
 
         public void Init(Village village, int kind, int era, Vector3 groundPosition)
         {
@@ -65,7 +67,17 @@ namespace DigGame
 
             if (_walking)
             {
-                _village.WanderRange(out float minX, out float maxX);
+                float minX, maxX;
+                if (HasPickaxeQuest)
+                {
+                    float radius = 2f * GameConfig.CellSize;
+                    minX = _questAnchorX - radius;
+                    maxX = _questAnchorX + radius;
+                }
+                else
+                {
+                    _village.WanderRange(out minX, out maxX);
+                }
                 var p = transform.position;
                 float nextX = p.x + _dir * WalkSpeed * dt;
 
@@ -93,6 +105,26 @@ namespace DigGame
             {
                 _sr.sprite = _frames[0];
             }
+        }
+
+        /// <summary>퀘스트가 활성화되면 입구 옆 지정 위치로 와서 그 주변만 걷는다.</summary>
+        public void SetPickaxeQuest(bool active, Vector3 groundPosition)
+        {
+            HasPickaxeQuest = active;
+            if (!active)
+            {
+                _walking = true;
+                _stateTimer = 0.4f;
+                return;
+            }
+
+            _questAnchorX = groundPosition.x;
+            transform.position = new Vector3(
+                groundPosition.x,
+                groundPosition.y + GameConfig.PlayerScale * 0.45f,
+                0f);
+            _walking = false;
+            _stateTimer = 0.8f;
         }
 
         /// <summary>시대가 바뀌면 주민도 그 시대 옷으로 갈아입는다.</summary>

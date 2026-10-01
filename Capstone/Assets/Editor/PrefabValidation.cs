@@ -52,6 +52,22 @@ namespace DigGame.Editor
                     "시작 상태가 바뀌었습니다.");
                 Require(root.GetComponentsInChildren<Villager>().Length > 0, "초기 주민 생성 실패.");
 
+                // 입구 근처 주민 퀘스트를 받고 1층 고유 유물 7종으로 다음 집게를 해금한다.
+                var quests = game.PickaxeQuests;
+                var firstGiver = quests.Giver;
+                Require(firstGiver != null && firstGiver.HasPickaxeQuest && quests.PickaxeTier == 1,
+                    "초기 집게 퀘스트 주민/단계 설정 실패.");
+                game.Player.transform.position = firstGiver.transform.position;
+                Require(quests.TryInteract() && quests.Accepted, "집게 퀘스트 수락 실패.");
+                var firstLayerRelics = RelicCatalog.OfDepth(1);
+                for (int i = 0; i < GameConfig.PickaxeQuestRelicCounts[0]; i++)
+                    game.Relics.Excavate(firstLayerRelics[i].Id);
+                Require(quests.Progress == GameConfig.PickaxeQuestRelicCounts[0], "고유 유물 진행도 집계 실패.");
+                Require(quests.TryInteract() && quests.PickaxeTier == 2 && quests.Giver != firstGiver,
+                    "집게 보상 또는 다음 주민 전환 실패.");
+                Require(firstGiver != null && !firstGiver.HasPickaxeQuest,
+                    "이전 퀘스트 주민이 제거되거나 퀘스트 표시가 남았습니다.");
+
                 int cx = game.Grid.Width / 2;
                 var mine = new MineSite(9999, new RectInt(cx, GameConfig.SurfaceRow + 4, 2, 2), Zone.Surface, 1, 30);
                 var miner = factory.Create<Worker>(PrefabId.Miner, root.transform);
@@ -99,7 +115,7 @@ namespace DigGame.Editor
                 var previewFactory = new EditorPrefabFactory(catalog);
                 var resident = previewFactory.Create<Villager>(PrefabId.Villager, root.transform);
                 Require(PrefabUtility.IsPartOfPrefabInstance(resident.gameObject), "편집 미리보기의 프리팹 연결 실패.");
-                Debug.Log("[DigGame] PREFAB_VALIDATION_PASSED: 19 assets, initialization, isolated instances, miner income, hauler delivery/cargo, pets, relics, growth, effects, editor links.");
+                Debug.Log("[DigGame] PREFAB_VALIDATION_PASSED: 19 assets, initialization, quest giver/unique relic/tier reward, isolated instances, miner income, hauler delivery/cargo, pets, relics, growth, effects, editor links.");
             }
             finally
             {

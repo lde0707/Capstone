@@ -14,6 +14,7 @@ namespace DigGame
         /// <summary>파낸 자리 뒤에 깔리는 흙벽. 땅보다 한 단 뒤다.</summary>
         const int OrderBackdrop = -1;
         const int OrderGround = 0;
+        const int OrderPollutionTint = 2;
         const int OrderTreasure = 30;  // 보물은 어둠에 가려진다 (직접 찾아야 함)
         const int OrderFog = 45;
         const int OrderMine = 46;      // 지상 시설·고용한 일꾼은 어둠 위에 계속 보인다
@@ -47,13 +48,13 @@ namespace DigGame
 
         readonly Dictionary<Vector2Int, GameObject> _treasureMarkers = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<Vector2Int, GameObject> _relicMarkers = new Dictionary<Vector2Int, GameObject>();
-        TileBase _relicHintTile;
         readonly Dictionary<int, TileBase> _shaftTiles = new Dictionary<int, TileBase>();
         readonly Dictionary<int, GameObject> _mineMarkers = new Dictionary<int, GameObject>();
 
         Transform _markerRoot;
         SpriteRenderer _highlight;
         SpriteRenderer _fogRenderer;
+        SpriteRenderer _pollutionTintRenderer;
         Material _fogMaterial;
         GameObject _surfaceRecycle;
 
@@ -80,12 +81,13 @@ namespace DigGame
 
             BuildTileAssets();
             PaintGround();
+            BuildPollutionTint();
             BuildDigFeatureHints();
             BuildBuriedTrashHints();
             BuildSmoothFog();
             BuildHighlight();
 
-            BuildBuriedRelicHints();
+            BuildBuriedRelicMarkers();
 
             _grid.OnTileChanged += HandleTileChanged;
             _grid.OnTreasureRemoved += HandleTreasureRemoved;
@@ -112,8 +114,6 @@ namespace DigGame
                 DestroyGenerated(tile);
             foreach (var tile in _buriedHintTiles.Values)
                 DestroyGenerated(tile);
-            DestroyGenerated(_relicHintTile);
-            _relicHintTile = null;
             foreach (var tile in _shaftTiles.Values) DestroyGenerated(tile);
             _shaftTiles.Clear();
             foreach (var tile in _backdropTiles.Values) DestroyGenerated(tile);
@@ -218,6 +218,34 @@ namespace DigGame
             }
             _backdrop.SetTiles(positions, backdrops);
             _ground.SetTiles(positions, tiles);
+        }
+
+        /// <summary>오염도가 오를수록 지하 전체에 옅은 보라색이 한 겹씩 쌓인다.</summary>
+        void BuildPollutionTint()
+        {
+            var go = new GameObject("Underground Pollution Tint");
+            go.transform.SetParent(transform, false);
+
+            float width = _grid.Width * GameConfig.CellSize;
+            float height = (_grid.Height - GameConfig.SurfaceRow) * GameConfig.CellSize;
+            go.transform.localPosition = new Vector3(
+                width * 0.5f,
+                -GameConfig.SurfaceRow * GameConfig.CellSize - height * 0.5f,
+                0f);
+            go.transform.localScale = new Vector3(width, height, 1f);
+
+            _pollutionTintRenderer = go.AddComponent<SpriteRenderer>();
+            _pollutionTintRenderer.sprite = SpriteFactory.Solid(Color.white);
+            _pollutionTintRenderer.sortingOrder = OrderPollutionTint;
+            SetPollutionLevel(0);
+        }
+
+        public void SetPollutionLevel(int level)
+        {
+            if (_pollutionTintRenderer == null) return;
+            float amount = Mathf.Clamp(level, 0, PollutionMeter.MaxValue) / (float)PollutionMeter.MaxValue;
+            _pollutionTintRenderer.color = new Color(0.54f, 0.16f, 0.78f, 0.34f * amount);
+            _pollutionTintRenderer.enabled = level > 0;
         }
 
         TileBase TileAt(int x, int y)
@@ -532,32 +560,19 @@ namespace DigGame
                 _buriedHintMap.SetTile(ToCell(x, y), null);
         }
 
-        /// <summary>땅속 유물은 보라 광점으로 예고된다 — 쓰레기 힌트보다 크고 진하다.</summary>
-        void BuildBuriedRelicHints()
+        /// <summary>
+        /// 발굴 전 유물 전용 이미지를 처음부터 땅 위, 포그 아래에 배치한다.
+        /// 플레이어 시야 안에서는 흙 속 유물의 외형이 보이지만 먼 어둠 너머에서는 가려진다.
+        /// </summary>
+        void BuildBuriedRelicMarkers()
         {
             foreach (var (cell, _) in _grid.AllRelics)
             {
-                if (_grid.IsWalkable(cell.x, cell.y)) continue;
-                Vector3Int tileCell = ToCell(cell.x, cell.y);
-                _buriedHintMap.SetTile(tileCell, RelicHintTile());
-                _buriedHintMap.SetTransformMatrix(tileCell, Matrix4x4.TRS(
-                    Vector3.zero, Quaternion.identity, Vector3.one * 0.80f));
+                ShowRelicMarker(cell.x, cell.y);
             }
         }
 
-        TileBase RelicHintTile()
-        {
-            if (_relicHintTile != null) return _relicHintTile;
-            var tile = ScriptableObject.CreateInstance<Tile>();
-            tile.hideFlags = HideFlags.DontSave;
-            tile.sprite = SpriteFactory.Diamond(Color.white);
-            tile.color = new Color(0.86f, 0.55f, 1f, 0.78f);
-            tile.flags = TileFlags.LockColor;
-            _relicHintTile = tile;
-            return tile;
-        }
-
-        /// <summary>파낸 자리에 드러난 화석/깨진 물건.</summary>
+        /// <summary>땅속에 묻힌 상태부터 발굴 직전까지 보여 주는 유물 이미지.</summary>
         void ShowRelicMarker(int x, int y)
         {
             var key = new Vector2Int(x, y);

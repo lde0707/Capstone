@@ -29,9 +29,16 @@ namespace DigGame
                 var session = _controller.Session;
                 GUI.Label(new Rect(60,25,650,50), "분리수거 작업대", _title);
                 if (GUI.Button(new Rect(835,30,120,42), "닫기  Esc", _button)) { _controller.Close(); return; }
-                GUI.Label(new Rect(60,80,880,35), $"대기 {session.Queue.Count}개   ·   오염도 {session.Pollution.Value}/100   ·   마감까지 {Mathf.CeilToInt(_controller.Game.TimeLeft)}초", _label);
+                GUI.Label(new Rect(60,80,880,35), $"대기 {session.Queue.Count}/{RecyclingQueue.MaxCapacity}개   ·   오염도 {session.Pollution.Value}/{PollutionMeter.MaxValue}칸   ·   마감까지 {Mathf.CeilToInt(_controller.Game.TimeLeft)}초", _label);
                 Fill(new Rect(60,120,880,8), new Color(.15f,.2f,.25f));
-                Fill(new Rect(60,120,880*session.Pollution.Value/100f,8), new Color(.95f,.3f,.27f));
+                Fill(new Rect(60,120,880*session.Pollution.Value/(float)PollutionMeter.MaxValue,8), new Color(.65f,.25f,.90f));
+                if (session.State == RecyclingState.Ready)
+                {
+                    GUI.Label(new Rect(310,132,380,26), $"남은 시간  {session.AnswerTimeRemaining:0.0}초", _label);
+                    Fill(new Rect(310,158,380,8), new Color(.15f,.2f,.25f));
+                    Fill(new Rect(310,158,380*(1f-session.AnswerProgress),8),
+                        session.AnswerTimeRemaining <= .6f ? new Color(.95f,.25f,.30f) : new Color(1f,.72f,.20f));
+                }
                 if (session.State == RecyclingState.Completed)
                 {
                     GUI.Label(new Rect(100,210,800,90), "분리수거 완료!", _title);
@@ -55,7 +62,11 @@ namespace DigGame
                 }
                 if (moving && session.Queue.TryPeek(1,out var later)) Card(next,later,t,new Color(.27f,.4f,.5f));
                 string message = moving ? (session.LastResult.Specialist ? $"전문 처리 완료  +{session.LastResult.Reward:N0}원" :
-                    session.LastResult.Correct ? $"정확한 분류!  +{session.LastResult.Reward:N0}원" : "분류 실패 · 보상 없이 폐기 / 오염도 상승") : "물건을 보고 알맞은 분류 키를 누르세요";
+                    session.LastResult.Correct
+                        ? $"정확한 분류!  +{session.LastResult.Reward:N0}원" + (session.LastResult.PollutionDelta < 0 ? " · 오염도 1칸 회복" : "")
+                        : session.LastResult.TimedOut
+                            ? "시간 초과! · 보상 없이 폐기 / 오염도 +1칸"
+                            : "분류 실패 · 보상 없이 폐기 / 오염도 +1칸") : "2초 안에 알맞은 분류 키를 누르세요";
                 GUI.Label(new Rect(50,485,900,45),message,_label);
                 GUI.enabled = !moving;
                 for (int i=0;i<5;i++)

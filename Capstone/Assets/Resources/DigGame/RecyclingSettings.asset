@@ -13,4 +13,4 @@ MonoBehaviour:
   m_Name: RecyclingSettings
   m_EditorClassIdentifier: Assembly-CSharp::DigGame.RecyclingSettings
   _transitionSeconds: 0.45
-  _mistakePollution: 5
+  _answerSeconds: 2

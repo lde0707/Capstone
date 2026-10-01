@@ -43,11 +43,10 @@ namespace DigGame
         // ---------- 굴착 ----------
         public const float DigTimePerHardness = 0.34f;
         public const float DigStaminaPerTile = 3.25f; // 기존 대비 50% 감소
-        /// <summary>땅의 요구 힘을 초과한 힘 1당 추가되는 굴착 속도.</summary>
-        public const float PowerDigSpeedBonusPerSurplus = 0.35f;
+        /// <summary>힘 강화 1단계당 추가되는 굴착 속도. 지층 해금과는 무관하다.</summary>
+        public const float PowerDigSpeedBonusPerLevel = 0.20f;
 
         // ---------- 플레이어 ----------
-        public const float BaseMaxHealth = 100f;
         public const float BaseMoveSpeed = 5.5f;
         public const float BaseMaxStamina = 100f;
         public const int BasePower = 1;
@@ -58,12 +57,8 @@ namespace DigGame
         public const float StaminaTickInterval = 0.1f;
         public const float StaminaPerTick = 10f;    // 지상 회복 속도 2배
 
-        // ---------- 깊이 압박 ----------
-        public const float DepthDamageStartDepth = Layer3Depth;
-        public const float DepthDamagePerSec = 1.4f;
-
         // ---------- 유해 폐기물 ----------
-        public const float HazardPickupDamage = 12f;   // 방호복 없이 주울 때 체력 피해
+        public const float HazardPickupStaminaDamage = 20f;
 
         // ==================================================================
         // 일일 사이클
@@ -117,6 +112,9 @@ namespace DigGame
         public const int UpgradeBaseCost = 300;
         public const float UpgradeCostGrowth = 1.6f;
         public const int MaxUpgradeLevel = 8;
+        public const int MaxPowerUpgradeLevel = 15;
+        public const int PowerUpgradeBaseCost = 400;
+        public const float PowerUpgradeCostGrowth = 1.35f;
 
         // ---------- 지상 건물 ----------
         public const int BuildingWidth = 2;
@@ -223,13 +221,15 @@ namespace DigGame
         public const float GasPocketChanceAbyss = 0.040f;
         public const float CompactCacheValueMultiplier = 1.65f;
         public const float GasPocketValueMultiplier = 1.45f;
-        public const float GasPocketHealthDamage = 10f;
         public const float GasPocketStaminaDamage = 15f;
         // ---------- 유물 ----------
         /// <summary>같은 유물이 땅속에 묻혀 있는 군데 수.</summary>
         public const int RelicCopiesPerKind = 3;
         public const int RelicMinSpacing = 5;
         public const int RelicPlacementAttempts = 900;
+        /// <summary>집게 퀘스트의 지층별 고유 유물 요구량.</summary>
+        public static readonly int[] PickaxeQuestRelicCounts = { 7, 8, 10, 7 };
+        public const float PickaxeQuestInteractRange = 2.2f;
         /// <summary>한 번에 들고 다닐 수 있는 유물 수 (가방 부피와 별개).</summary>
         public const int RelicCarryLimit = 8;
         /// <summary>복원 1건에 걸리는 시간 (초). 낮 2분 기준으로 하루 여러 개가 나온다.</summary>

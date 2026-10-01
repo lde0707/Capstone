@@ -28,6 +28,7 @@ namespace DigGame
         /// <summary>지상에 자라나는 마을 — 하루하루의 보상.</summary>
         public Village Village { get; private set; }
         public RelicSystem Relics { get; private set; }
+        public PickaxeQuestSystem PickaxeQuests { get; private set; }
 
         public Vector2Int SurfaceDropCell { get; private set; }
         public Vector2Int RecycleDropCell { get; private set; }
@@ -67,6 +68,8 @@ namespace DigGame
 
         public bool ShopOpen { get; private set; }              // 낮의 간이 강화 상점
         public bool IsRunning => State == GameState.Day;
+        public int PollutionLevel => Recycling?.Session?.Pollution.Value ?? 0;
+        public int PollutionSlowdownPercent => PollutionLevel * 100;
         /// <summary>오늘의 단계를 전부 넘겼는가.</summary>
         public bool AllQuotaStagesCleared => QuotaCleared >= GameConfig.MaxQuotaStages;
 
@@ -162,6 +165,8 @@ namespace DigGame
             Player.Init(this, SurfaceDropCell);
             Recycling = Prefabs.Create<RecyclingMinigameController>(PrefabId.RecyclingStation, transform);
             Recycling.Initialize(this);
+            PickaxeQuests = new PickaxeQuestSystem();
+            PickaxeQuests.Setup(this);
 
             if (configureCamera)
                 SetupCamera(Player.transform);
@@ -176,7 +181,7 @@ namespace DigGame
             Log($"1일차 — 해가 지기 전까지 할당량 {Quota:N0}원을 채우자!");
             Log($"채울 때마다 더 큰 다음 목표가 열린다 (하루 최대 {GameConfig.MaxQuotaStages}단계) — 단계마다 마을이 커진다");
             Log("할당량을 채우면 지상의 내 집이 빛나면서 커진다 — 7일이면 도시가 된다");
-            Log($"땅속 보랏빛 광점은 <b>유물</b>이다 — 캐서 복원소 앞에서 E " +
+            Log($"땅속에 비치는 발굴 전 이미지는 <b>유물</b>이다 — 캐서 복원소 앞에서 E " +
                 $"(유물 {RelicCatalog.Count}종 · C 키로 도감)");
         }
 
@@ -319,6 +324,11 @@ namespace DigGame
             var lines = new List<string>();
             var gear = Player != null ? Player.Gear : null;
 
+            // 투입소에 쓰레기를 방치한 채 하루를 넘기면 오염도가 한 칸 오른다.
+            if (Recycling != null && Recycling.ApplyOvernightPollution())
+                lines.Add($"미분류 쓰레기 {Recycling.Session.Queue.Count}개 방치 — 오염도 +1칸 " +
+                    $"({PollutionLevel}/{PollutionMeter.MaxValue})");
+
             // 0) 운반 일꾼이 싣고 있던 화물은 광산 야적장으로 반환 (다음 날 이월 방지)
             foreach (var w in Workers)
                 if (w != null) w.DumpCargoToMine();
@@ -447,6 +457,7 @@ namespace DigGame
 
             Log($"{Day}일차 — 오늘 할당량 {Quota:N0}원");
             if (Village != null) Village.OnNewDay(Day);
+            PickaxeQuests?.OnNewDay();
         }
 
         // ==================================================================
@@ -462,8 +473,10 @@ namespace DigGame
 
             var c = Player.HoverCell;
             var kind = Grid.Get(c.x, c.y);
-            bool canDig = TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= Player.Stats.Power;
-            // 이미 판 통로나 힘이 부족한 칸에는 빨간 사각형을 남기지 않는다.
+            bool canDig = PickaxeQuests != null
+                ? PickaxeQuests.CanDig(kind)
+                : TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= 1;
+            // 이미 판 통로나 집게 단계가 부족한 칸에는 빨간 사각형을 남기지 않는다.
             View.SetHighlight(canDig, c, true);
         }
 
@@ -477,6 +490,7 @@ namespace DigGame
         public bool PlayerNearBuilding() => PlayerNearRect(BuildingRect);
         public bool PlayerNearRecycle() => PlayerNearRect(RecycleRect);
         public bool PlayerNearRestorer() => PlayerNearRect(RestorerRect);
+        public bool PlayerNearPickaxeQuest() => PickaxeQuests != null && PickaxeQuests.PlayerNearGiver;
 
         bool PlayerNearRect(RectInt rect)
         {
@@ -507,6 +521,9 @@ namespace DigGame
             bool nearRestorer = PlayerNearRestorer();
             bool nearRecycle = PlayerNearRecycle();
             bool nearShop = PlayerNearBuilding();
+
+            // 입구 근처 퀘스트 주민은 시설보다 먼저 상호작용한다.
+            if (PickaxeQuests != null && PickaxeQuests.TryInteract()) return;
 
             // 1) 할 일이 있는 시설 순서대로
             // 돈이 모자라 한 개도 못 맡기면 E 를 붙잡지 않는다 (강화소가 열려야 돈을 번다).
@@ -541,7 +558,7 @@ namespace DigGame
                 Log(Relics == null || Relics.CarriedCount == 0
                     ? (Relics != null && Relics.QueueCount > 0
                         ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
-                        : "복원소에 맡길 유물이 없다 — 땅속 보랏빛 광점을 찾아보자")
+                        : "복원소에 맡길 유물이 없다 — 땅속에 비치는 유물 이미지를 찾아보자")
                     : $"복원 비용이 모자라다 (가장 싼 것 {Relics.CheapestRestoreCost:N0}원 / 보유 {Money:N0}원)");
                 return;
             }

@@ -531,21 +531,20 @@ namespace DigGame.Editor
 
             foreach (TileKind kind in kinds)
             {
-                int required = TileInfo.RequiredPower(kind);
-                float equalPower = TileInfo.PowerDigDurationMultiplier(kind, required);
-                float oneAbove = TileInfo.PowerDigDurationMultiplier(kind, required + 1);
-                float twoAbove = TileInfo.PowerDigDurationMultiplier(kind, required + 2);
+                float basePower = TileInfo.PowerDigDurationMultiplier(kind, GameConfig.BasePower);
+                float oneUpgrade = TileInfo.PowerDigDurationMultiplier(kind, GameConfig.BasePower + 1);
+                float twoUpgrades = TileInfo.PowerDigDurationMultiplier(kind, GameConfig.BasePower + 2);
 
-                if (!Mathf.Approximately(equalPower, 1f) || oneAbove >= equalPower || twoAbove >= oneAbove)
+                if (!Mathf.Approximately(basePower, 1f) || oneUpgrade >= basePower || twoUpgrades >= oneUpgrade)
                     throw new System.InvalidOperationException(
-                        $"{TileInfo.DisplayName(kind)}의 힘 우위 굴착 가속이 단계적으로 적용되지 않습니다.");
+                        $"{TileInfo.DisplayName(kind)}의 힘 굴착 가속이 단계적으로 적용되지 않습니다.");
             }
 
             float softDirtAtPowerFour = TileInfo.PowerDigDurationMultiplier(TileKind.SoftDirt, 4);
-            if (!Mathf.Approximately(softDirtAtPowerFour, 1f / 2.05f))
-                throw new System.InvalidOperationException("낮은 단계 땅의 힘 굴착 보너스가 설정값과 다릅니다.");
+            if (!Mathf.Approximately(softDirtAtPowerFour, 1f / 1.6f))
+                throw new System.InvalidOperationException("힘 굴착 속도 보너스가 설정값과 다릅니다.");
 
-            Debug.Log("[DigGame] 힘 굴착 가속 — 요구치 초과 1단계당 속도 +35% · 총 기력 소모 유지");
+            Debug.Log("[DigGame] 힘 굴착 가속 — 강화 1단계당 속도 +20% · 지층 해금과 분리 · 총 기력 소모 유지");
         }
 
         static void ValidateMineUtility()

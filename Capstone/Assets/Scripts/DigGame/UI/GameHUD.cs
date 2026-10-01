@@ -27,6 +27,7 @@ namespace DigGame
         public Font UIFont => _font;
         GUIStyle _label, _small, _micro, _title, _big, _center, _button, _buttonSmall, _tab, _tabOn;
         GUIStyle _nameplate;
+        GUIStyle _questBubbleText, _questBang, _fullBubbleText;
         Texture2D _white;
         bool _showHelp = true;
         bool _stylesReady;
@@ -138,6 +139,29 @@ namespace DigGame
                 alignment = TextAnchor.MiddleCenter,
                 richText = false,
             };
+            _questBubbleText = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                richText = true,
+                wordWrap = true,
+                clipping = TextClipping.Clip
+            };
+            _questBang = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 29,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                richText = false
+            };
+            _fullBubbleText = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 17,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                richText = false
+            };
 
             if (_font != null)
             {
@@ -146,6 +170,9 @@ namespace DigGame
                 _button.font = _font; _buttonSmall.font = _font;
                 _tab.font = _font; _tabOn.font = _font;
                 _nameplate.font = _font;
+                _questBubbleText.font = _font;
+                _questBang.font = _font;
+                _fullBubbleText.font = _font;
             }
 
             var c = new Color(0.94f, 0.94f, 0.96f);
@@ -156,6 +183,9 @@ namespace DigGame
             _big.normal.textColor = c;
             _center.normal.textColor = c;
             _nameplate.normal.textColor = new Color(1f, 0.97f, 0.9f);
+            _questBubbleText.normal.textColor = new Color32(48, 38, 57, 255);
+            _questBang.normal.textColor = Color.white;
+            _fullBubbleText.normal.textColor = new Color32(74, 42, 37, 255);
         }
 
         void OnGUI()
@@ -168,6 +198,8 @@ namespace DigGame
             {
                 case GameState.Day:
                     DrawRelicNames();
+                    DrawQuestGiverLabel();
+                    DrawRecycleFullBubble();
                     DrawStatsPanel();
                     DrawTopRight();
                     DrawContext();
@@ -201,14 +233,13 @@ namespace DigGame
             var s = p.Stats;
             var g = p.Gear;
 
-            float h = 196f;
+            float h = 220f;
             var r = new Rect(MarginX, MarginY, PanelW, h);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             float x = r.x + 12f, w = r.width - 24f, y = r.y + 12f;
 
-            Bar(new Rect(x, y, w, 18), s.Health / s.MaxHealth,
-                new Color32(224, 78, 78, 255), $"체력  {s.Health:0} / {s.MaxHealth:0}");
+            PollutionBar(new Rect(x, y, w, 18), _game.PollutionLevel);
             y += 26;
 
             GUI.Label(new Rect(x, y, w, 20), $"이동속도  <b>{s.MoveSpeed:0.0}</b>", _label);
@@ -218,7 +249,10 @@ namespace DigGame
                 new Color32(86, 166, 240, 255), $"기력  {s.Stamina:0} / {s.MaxStamina:0}");
             y += 26;
 
-            GUI.Label(new Rect(x, y, w, 20), $"힘  <b>{s.Power}</b>", _label);
+            var quests = _game.PickaxeQuests;
+            string pickaxe = quests == null ? "1단계 집게" : $"{quests.PickaxeTier}단계 {quests.PickaxeName}";
+            GUI.Label(new Rect(x, y, w, 20),
+                $"집게  <b>{pickaxe}</b> · 속도 +{s.DigSpeedBonusPercent}%", _label);
             y += 26;
 
             Bar(new Rect(x, y, w, 16), p.InventoryVolume / (float)p.BagCapacity,
@@ -241,6 +275,27 @@ namespace DigGame
             if (g.Pet != PetKind.None) gear.Add(PlayerGear.PetName(g.Pet));
             if (gear.Count > 0)
                 GUI.Label(new Rect(x, y, w, 20), string.Join(" · ", gear), _small);
+
+            y += 20;
+            if (quests != null && !quests.AllCompleted)
+                GUI.Label(new Rect(x, y, w, 20),
+                    quests.Accepted ? $"집게 퀘스트 · {quests.ObjectiveText}" : "입구 옆 ! 주민에게 집게 퀘스트", _small);
+        }
+
+        void PollutionBar(Rect r, int value)
+        {
+            const int slots = PollutionMeter.MaxValue;
+            const float gap = 2f;
+            float slotW = (r.width - gap * (slots - 1)) / slots;
+            for (int i = 0; i < slots; i++)
+            {
+                var slot = new Rect(r.x + i * (slotW + gap), r.y, slotW, r.height);
+                Fill(slot, i < value
+                    ? new Color32(151, 67, 211, 255)
+                    : new Color(1f, 1f, 1f, 0.13f));
+            }
+            GUI.Label(new Rect(r.x + 7, r.y - 1, r.width, r.height + 3),
+                $"오염도  {value} / {slots}칸" + (value > 0 ? $" · 굴착 {value * 100}% 느림" : ""), _small);
         }
 
         void Bar(Rect r, float t, Color color, string text)
@@ -401,7 +456,7 @@ namespace DigGame
                 var sr = new Rect(Screen.width * 0.5f - 145, y, 290, 30);
                 Fill(sr, new Color(0.18f, 0.12f, 0.05f, 0.90f));
                 GUI.Label(new Rect(sr.x + 12, sr.y + 4, sr.width - 24, 22),
-                    $"<b>힘 우위</b> — 굴착 속도 +{digSpeedBonus}%", _label);
+                    $"<b>힘 강화</b> — 굴착 속도 +{digSpeedBonus}%", _label);
             }
 
             // 시설이 붙어 있어 사정거리가 겹친다 — 안내는 HandleInteract 의 우선순위와
@@ -412,23 +467,31 @@ namespace DigGame
                 bool nearRestorer = _game.PlayerNearRestorer();
                 bool nearRecycle = _game.PlayerNearRecycle();
                 bool nearShop = _game.PlayerNearBuilding();
+                bool nearQuest = _game.PlayerNearPickaxeQuest();
 
                 string text = null;
                 Color tint = default;
 
-                if (nearRestorer && relics != null && relics.CanDepositNow)
+                if (nearQuest)
+                {
+                    text = _game.PickaxeQuests.InteractionText;
+                    tint = new Color(0.28f, 0.18f, 0.03f, 0.92f);
+                }
+                else if (nearRestorer && relics != null && relics.CanDepositNow)
                 {
                     text = $"[E] 유물 {relics.CarriedCount}개 복원 맡기기 · 비용 {relics.CarriedRestoreCost:N0}원";
                     tint = new Color(0.16f, 0.08f, 0.26f, 0.90f);
                 }
                 else if (nearRecycle && p.Inventory.Count > 0)
                 {
-                    text = $"[E] {p.Inventory.Count}개 보관 · [F] 분류 시작 (대기 {_game.Recycling.Session.Queue.Count}개)";
+                    text = _game.Recycling.Session.Queue.IsFull
+                        ? $"작업대 가득 참 ({RecyclingQueue.MaxCapacity}/{RecyclingQueue.MaxCapacity}) · [F] 분류 시작"
+                        : $"[E] {p.Inventory.Count}개 보관 · [F] 분류 시작 (대기 {_game.Recycling.Session.Queue.Count}/{RecyclingQueue.MaxCapacity}개)";
                     tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
                 }
                 else if (nearShop)
                 {
-                    text = nearRecycle ? $"[E] 강화 · [F] 분류 (대기 {_game.Recycling.Session.Queue.Count}개)" : "[E] 강화 (간이 상점)";
+                    text = nearRecycle ? $"[E] 강화 · [F] 분류 (대기 {_game.Recycling.Session.Queue.Count}/{RecyclingQueue.MaxCapacity}개)" : "[E] 강화 (간이 상점)";
                     tint = new Color(0.10f, 0.14f, 0.08f, 0.82f);
                 }
                 else if (nearRestorer)
@@ -442,7 +505,9 @@ namespace DigGame
                 }
                 else if (nearRecycle)
                 {
-                    text = $"[E] 가방 보관 · [F] 분류 시작 · 대기 {_game.Recycling.Session.Queue.Count}개";
+                    text = _game.Recycling.Session.Queue.IsFull
+                        ? $"작업대 가득 참 ({RecyclingQueue.MaxCapacity}/{RecyclingQueue.MaxCapacity}) · [F] 분류 시작"
+                        : $"[E] 가방 보관 · [F] 분류 시작 · 대기 {_game.Recycling.Session.Queue.Count}/{RecyclingQueue.MaxCapacity}개";
                     tint = new Color(0.06f, 0.22f, 0.10f, 0.88f);
                 }
 
@@ -608,7 +673,7 @@ namespace DigGame
 
             y += rows * (CellH + Gap) + 4f;
             GUI.Label(new Rect(x, y, iw, 20),
-                "땅속 <color=#dcaaff>보랏빛 광점</color>이 유물이다 · 캐서 복원소(스폰 왼쪽 끝 시설) 앞에서 E",
+                "땅속에 비치는 <color=#dcaaff>발굴 전 이미지</color>가 유물이다 · 캐서 복원소 앞에서 E",
                 _small);
         }
 
@@ -681,7 +746,7 @@ namespace DigGame
         {
             var s = _game.Player.Stats;
 
-            float w = 460f, h = 330f;
+            float w = 460f, h = 280f;
             var r = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.5f - h * 0.5f, w, h);
             Fill(new Rect(r.x - 3, r.y - 3, r.width + 6, r.height + 6), new Color(1f, 0.9f, 0.7f, 0.28f));
             Panel(r, new Color(0.08f, 0.09f, 0.12f, 0.96f));
@@ -694,7 +759,6 @@ namespace DigGame
             GUI.Label(new Rect(x, y, iw, 20), "장비·펫·시설은 밤 상점에서 판다", _small);
             y += 26;
 
-            DrawUpgradeRow(x, ref y, iw, StatKind.Health, s);
             DrawUpgradeRow(x, ref y, iw, StatKind.MoveSpeed, s);
             DrawUpgradeRow(x, ref y, iw, StatKind.Stamina, s);
             DrawUpgradeRow(x, ref y, iw, StatKind.Power, s);
@@ -823,7 +887,6 @@ namespace DigGame
         void DrawNightStats(float x, float y, float w)
         {
             var s = _game.Player.Stats;
-            DrawUpgradeRow(x, ref y, w, StatKind.Health, s);
             DrawUpgradeRow(x, ref y, w, StatKind.MoveSpeed, s);
             DrawUpgradeRow(x, ref y, w, StatKind.Stamina, s);
             DrawUpgradeRow(x, ref y, w, StatKind.Power, s);
@@ -973,7 +1036,7 @@ namespace DigGame
         void DrawHelpPanel()
         {
             // 하단 인벤토리 핫바와 겹치지 않게 그 위에 배치한다.
-            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 429, 510, 305);
+            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 467, 510, 343);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             float y = r.y + 8;
@@ -989,10 +1052,12 @@ namespace DigGame
                 "투입소 E 보관 → F 분류 → 1~5 선택 · Esc 나가기",
                 "파랑: 푸석한 흙 · 금색: 고가품이 든 압축 폐기물층",
                 "연두: 매립 가스층 — 방호복이 있으면 피해를 막는다",
-                "힘이 땅의 요구치보다 높으면 단계마다 굴착 속도 +35%",
+                "입구 옆 ! 주민 퀘스트 — 지층별 유물을 모아 다음 집게 해금",
+                "힘 강화 — 지층 해금 없이 단계마다 모든 땅 굴착 속도 +20%",
+                "오염도 1칸마다 굴착 100% 느림 · 정상 분류 시 1칸 회복",
                 "초록 잔디 지반은 파괴 불가 · 스폰 바로 오른쪽 통로로 지하에 들어간다",
                 "도시광산 E: 보관/회수 · H 20초 자동 재활용 · J 대량 운반",
-                "보랏빛 광점 — 유물. 캐서 복원소(세 시설 중 가장 왼쪽) 앞에서 E",
+                "땅속에 비치는 이미지 — 유물. 캐서 복원소(세 시설 중 가장 왼쪽) 앞에서 E",
                 "C — 유물 도감 (한 분류를 다 모으면 판매액 세트 보너스)",
                 "해가 지기 전에 꼭 지상으로! 지하에 있으면 가방을 몰수당한다",
                 "Shift+R — 새 게임"
@@ -1147,8 +1212,75 @@ namespace DigGame
         }
 
         // ==================================================================
-        // 가까이 간 복원 유물의 이름표
+        // 월드 시설/NPC 말풍선
         // ==================================================================
+        void DrawRecycleFullBubble()
+        {
+            var queue = _game.Recycling?.Session?.Queue;
+            if (queue == null || !queue.IsFull || _showCodex || _game.ShopOpen) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+
+            RectInt rect = _game.RecycleRect;
+            float worldX = (rect.xMin + rect.width * 0.5f) * GameConfig.CellSize;
+            float worldY = -GameConfig.SurfaceRow * GameConfig.CellSize
+                + 5.8f * GameConfig.BuildingScale * GameConfig.CellSize;
+            Vector3 screen = _cam.WorldToScreenPoint(new Vector3(worldX, worldY, 0f));
+            if (screen.z < 0f) return;
+
+            const float w = 126f, h = 42f;
+            float x = Mathf.Clamp(screen.x - w * 0.5f, 8f, Screen.width - w - 8f);
+            float y = Mathf.Clamp(Screen.height - screen.y - h - 8f, 8f, Screen.height - h - 18f);
+            var bubble = new Rect(x, y, w, h);
+            Color outline = new Color(0.18f, 0.09f, 0.08f, 0.97f);
+            Color body = new Color(1f, 0.88f, 0.62f, 0.98f);
+
+            Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f), outline);
+            Fill(bubble, body);
+            float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
+            Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), outline);
+            Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), body);
+            Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), outline);
+            GUI.Label(bubble, "가득 참!", _fullBubbleText);
+        }
+
+        void DrawQuestGiverLabel()
+        {
+            var quests = _game.PickaxeQuests;
+            var giver = quests?.Giver;
+            if (giver == null || quests.AllCompleted || _showCodex || _game.ShopOpen) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
+
+            Vector3 screen = _cam.WorldToScreenPoint(new Vector3(
+                giver.transform.position.x, giver.QuestLabelWorldY, 0f));
+            if (screen.z < 0f) return;
+
+            string message = $"지하 {quests.TargetDepth}층에서 유물을\n" +
+                $"캐서 복원시켜줘! ({quests.Progress}/{quests.RequiredCount})";
+
+            const float w = 286f, h = 64f;
+            float x = Mathf.Clamp(screen.x - w * 0.5f, 8f, Screen.width - w - 8f);
+            float y = Mathf.Clamp(Screen.height - screen.y - h - 8f, 8f, Screen.height - h - 18f);
+            var bubble = new Rect(x, y, w, h);
+
+            // 픽셀 스타일 말풍선: 어두운 테두리, 밝은 본체, 두 칸짜리 꼬리.
+            Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f),
+                new Color(0.12f, 0.08f, 0.16f, 0.96f));
+            Fill(bubble, new Color(1f, 0.97f, 0.88f, 0.98f));
+            float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
+            Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
+            Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), new Color(1f, 0.97f, 0.88f, 0.98f));
+            Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
+
+            // 느낌표는 별도 보라색 배지에 크게 그려 가장 먼저 읽히게 한다.
+            var badge = new Rect(bubble.x + 8f, bubble.y + 9f, 46f, 46f);
+            Fill(badge, new Color32(139, 63, 196, 255));
+            GUI.Label(badge, "!", _questBang);
+            GUI.Label(new Rect(bubble.x + 64f, bubble.y + 5f, bubble.width - 72f, bubble.height - 10f),
+                message, _questBubbleText);
+        }
+
         void DrawRelicNames()
         {
             if (_showCodex || _game.ShopOpen) return;

@@ -37,6 +37,7 @@ namespace DigGame
             {
                 if (!HoverValid || _grid == null || Stats == null) return 0;
                 TileKind kind = _grid.Get(HoverCell.x, HoverCell.y);
+                if (_game?.PickaxeQuests != null && !_game.PickaxeQuests.CanDig(kind)) return 0;
                 if (!TileInfo.IsDiggable(kind)) return 0;
 
                 float durationMultiplier = TileInfo.PowerDigDurationMultiplier(kind, Stats.Power);
@@ -471,12 +472,14 @@ namespace DigGame
             return true;
         }
 
-        /// <summary>지금 힘으로 팔 수 있는 칸인가.</summary>
+        /// <summary>현재 퀘스트로 해금한 집게 단계에서 팔 수 있는 칸인가.</summary>
         bool CanDigCell(Vector2Int cell)
         {
             if (_grid == null || !_grid.InBounds(cell.x, cell.y)) return false;
             TileKind kind = _grid.Get(cell.x, cell.y);
-            return TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= Stats.Power;
+            return _game.PickaxeQuests != null
+                ? _game.PickaxeQuests.CanDig(kind)
+                : TileInfo.IsDiggable(kind) && TileInfo.RequiredPower(kind) <= 1;
         }
 
         void TickKeyboardDig(float dt)
@@ -502,10 +505,12 @@ namespace DigGame
             }
 
             int req = TileInfo.RequiredPower(kind);
-            if (req > Stats.Power)
+            int pickaxeTier = _game.PickaxeQuests?.PickaxeTier ?? 1;
+            if (req > Mathf.Min(4, pickaxeTier))
             {
                 CancelDig();
-                SetBlocked($"'{TileInfo.DisplayName(kind)}'을(를) 파려면 힘 {req} 필요 (현재 {Stats.Power})");
+                SetBlocked($"'{TileInfo.DisplayName(kind)}'을(를) 파려면 {req}단계 집게가 필요하다 " +
+                    $"(현재 {pickaxeTier}단계 · 입구 근처 NPC 퀘스트)");
                 return;
             }
 
@@ -520,7 +525,10 @@ namespace DigGame
             DigFeature feature = _grid.DigFeatureAt(target.x, target.y);
             float featureDurationMultiplier = DigFeatureInfo.DurationMultiplier(feature);
             float powerDurationMultiplier = TileInfo.PowerDigDurationMultiplier(kind, Stats.Power);
-            float durationMultiplier = featureDurationMultiplier * powerDurationMultiplier;
+            // 오염도 한 칸마다 최종 굴착 시간이 100%씩 늘어난다 (10칸이면 11배).
+            float pollutionDurationMultiplier = 1f + _game.PollutionLevel;
+            float durationMultiplier = featureDurationMultiplier * powerDurationMultiplier
+                * pollutionDurationMultiplier;
             if (DigTarget != target)
             {
                 DigTarget = target;
@@ -528,7 +536,7 @@ namespace DigGame
                 _digNeeded = GameConfig.DigTimePerHardness * hardness * durationMultiplier;
             }
 
-            // 힘은 시간만 단축한다. 한 칸을 완전히 팠을 때의 총 기력은 기존과 같게 유지한다.
+            // 힘과 오염도는 시간만 바꾼다. 한 칸의 총 기력 소모는 그대로 유지한다.
             float staminaRateMultiplier = DigFeatureInfo.StaminaMultiplier(feature)
                 / Mathf.Max(0.01f, durationMultiplier);
             float cost = GameConfig.DigStaminaPerTile / GameConfig.DigTimePerHardness
@@ -582,9 +590,8 @@ namespace DigGame
                     }
                     else
                     {
-                        Stats.Health -= GameConfig.GasPocketHealthDamage;
                         Stats.Stamina = Mathf.Max(0f, Stats.Stamina - GameConfig.GasPocketStaminaDamage);
-                        SetBlocked($"매립 가스 분출! 체력 -{GameConfig.GasPocketHealthDamage:0} · 기력 -{GameConfig.GasPocketStaminaDamage:0}");
+                        SetBlocked($"매립 가스 분출! 기력 -{GameConfig.GasPocketStaminaDamage:0}");
                         _game.Log("매립 가스에 노출됐다 — 방호복이 있으면 피해를 막을 수 있다");
                     }
                     break;
@@ -681,11 +688,11 @@ namespace DigGame
 
             if (_grid.TryTakeTreasure(c.x, c.y, out var item))
             {
-                // 유해 폐기물: 방호복이 없으면 다친다
+                // 체력 시스템이 없으므로 유해 폐기물 노출은 기력 피해로 처리한다.
                 if (item.Material == MaterialKind.Hazard && !Gear.HasHazmat)
                 {
-                    Stats.Health -= GameConfig.HazardPickupDamage;
-                    SetBlocked($"유해 폐기물을 맨손으로 만졌다! 체력 -{GameConfig.HazardPickupDamage:0}");
+                    Stats.Stamina = Mathf.Max(0f, Stats.Stamina - GameConfig.HazardPickupStaminaDamage);
+                    SetBlocked($"유해 폐기물을 맨손으로 만졌다! 기력 -{GameConfig.HazardPickupStaminaDamage:0}");
                 }
 
                 item.Volume = EffectiveVolume(item);
@@ -706,26 +713,10 @@ namespace DigGame
                     _staminaTick -= GameConfig.StaminaTickInterval;
                     Stats.Stamina = Mathf.Min(Stats.MaxStamina, Stats.Stamina + GameConfig.StaminaPerTick);
                 }
-                Stats.Health = Mathf.Min(Stats.MaxHealth, Stats.Health + 5f * dt);
-
             }
             else
             {
                 _staminaTick = 0f;
-
-                int depth = Depth;
-                if (depth > GameConfig.DepthDamageStartDepth)
-                {
-                    float t = Mathf.InverseLerp(GameConfig.DepthDamageStartDepth,
-                                                GameConfig.UndergroundRows, depth);
-                    Stats.Health -= GameConfig.DepthDamagePerSec * t * dt;
-                }
-            }
-
-            if (Stats.Health <= 0f)
-            {
-                Stats.Health = 0f;
-                _game.GameOver("체력이 0이 되었다");
             }
         }
 
@@ -738,10 +729,16 @@ namespace DigGame
         }
 
         public List<LootItem> TakeAll()
+            => TakeUpTo(int.MaxValue);
+
+        /// <summary>가방 앞쪽부터 최대 개수만 꺼낸다. 시설의 남은 보관 칸만 옮길 때 사용한다.</summary>
+        public List<LootItem> TakeUpTo(int maxCount)
         {
-            var all = new List<LootItem>(Inventory);
-            Inventory.Clear();
-            return all;
+            int count = Mathf.Clamp(maxCount, 0, Inventory.Count);
+            if (count == 0) return new List<LootItem>();
+            var items = Inventory.GetRange(0, count);
+            Inventory.RemoveRange(0, count);
+            return items;
         }
 
         /// <summary>지하 보관함에서 꺼낸 아이템을 현재 부피 그대로 가방에 넣는다.</summary>
