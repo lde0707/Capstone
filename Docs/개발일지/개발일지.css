@@ -1,0 +1,89 @@
+:root {
+  --ink: #24302a;
+  --muted: #66736c;
+  --paper: #fffdf7;
+  --green: #337a55;
+  --green-soft: #e6f3e9;
+  --yellow: #f1c75b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #dfe7e1;
+  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  line-height: 1.65;
+  word-break: keep-all;
+}
+
+.page {
+  position: relative;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 18px auto;
+  padding: 20mm 18mm 18mm;
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(30, 55, 40, 0.15);
+}
+
+.date { margin-bottom: 8px; color: var(--muted); font-size: 14px; font-weight: 700; }
+.day-label {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--green);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+h1 { margin: 18px 0 10px; font-size: 34px; line-height: 1.25; letter-spacing: -0.04em; }
+.summary { margin: 0 0 28px; color: var(--muted); font-size: 17px; }
+.goal {
+  margin-bottom: 24px;
+  padding: 15px 18px;
+  border-left: 6px solid var(--yellow);
+  border-radius: 0 10px 10px 0;
+  background: #fff7d9;
+}
+.goal strong { color: #765c10; }
+h2 { margin: 25px 0 10px; color: var(--green); font-size: 20px; }
+ul { margin: 0; padding-left: 22px; }
+li { margin: 8px 0; }
+.result {
+  margin-top: 30px;
+  padding: 18px 20px;
+  border: 1px solid #bdd6c5;
+  border-radius: 12px;
+  background: var(--green-soft);
+}
+.result strong { display: block; margin-bottom: 5px; color: #255f41; }
+.note { margin-top: 18px; color: var(--muted); font-size: 14px; }
+.navigation {
+  position: absolute;
+  right: 18mm;
+  bottom: 9mm;
+  left: 18mm;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.navigation a { color: var(--green); text-decoration: none; font-weight: 700; }
+.navigation span { color: #89938d; }
+
+@media (max-width: 850px) {
+  .page { width: calc(100% - 24px); min-height: calc(100vh - 24px); margin: 12px; padding: 34px 26px 64px; }
+  .navigation { right: 26px; bottom: 20px; left: 26px; }
+}
+
+@media print {
+  body { background: #fff; }
+  .page { width: 210mm; height: 297mm; min-height: 297mm; margin: 0; box-shadow: none; }
+  .navigation a { display: none; }
+}
+
+@page { size: A4; margin: 0; }
