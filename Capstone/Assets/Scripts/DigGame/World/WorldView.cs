@@ -592,7 +592,9 @@ namespace DigGame
             if (sr.sprite == null)
             {
                 sr.sprite = SpriteFactory.Diamond(Color.white);
-                sr.color = new Color(0.86f, 0.55f, 1f, 1f);
+                // 시트를 못 읽었을 때의 대체 표시. 암석 금테와 같은 금색으로 둬야
+                // "여기 유물이 있다" 가 쓰레기 광점과 헷갈리지 않는다.
+                sr.color = new Color(0.96f, 0.81f, 0.41f, 1f);
             }
 
             _relicMarkers[key] = go;
