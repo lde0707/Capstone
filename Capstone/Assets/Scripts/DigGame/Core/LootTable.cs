@@ -24,82 +24,83 @@ namespace DigGame
             }
         }
 
-        // ---------- 1층: 최근 매립층 — 생활 쓰레기 ----------
+        // ---------- 1층: 최근 매립층 — 생활 분리수거 ----------
         static readonly Entry[] SurfaceLoot =
         {
-            new Entry("종이 묶음", 45, 1, MaterialKind.General, .9f, 3f, RecyclingCategory.Paper),
-            new Entry("알루미늄 포일", 55, 1, MaterialKind.Metal, 1f, 2f, RecyclingCategory.Aluminum),
-            new Entry("비닐 뭉치",     15,  1, MaterialKind.General,     0.62f, 5f, RecyclingCategory.Plastic),
-            new Entry("찌그러진 캔",   35,  1, MaterialKind.Metal,       0.75f, 4f, RecyclingCategory.Can),
-            new Entry("소주병",        50,  1, MaterialKind.Glass,       0.88f, 3f),
-            new Entry("알루미늄 휘장", 85,  1, MaterialKind.Metal,       0.96f, 2.4f, RecyclingCategory.Aluminum),
-            new Entry("중고 스마트폰", 180, 1, MaterialKind.Electronics, 1.10f, 1.4f),
-            new Entry("기념 은화",     280, 1, MaterialKind.Relic,       1.24f, 0.7f),
-            new Entry("페트병 더미",   45,  2, MaterialKind.Plastic,     1.00f, 3f, RecyclingCategory.Pet),
-            new Entry("고장난 라디오", 140, 2, MaterialKind.Electronics, 1.15f, 1.5f),
-            new Entry("옛날 동전",     220, 1, MaterialKind.Relic,       1.25f, 0.5f),
+            new Entry("신문지 묶음",         40, 1, MaterialKind.General,   0.92f, 2.00f, RecyclingCategory.Paper),
+            new Entry("골판지 상자",         70, 2, MaterialKind.General,   0.80f, 2.50f, RecyclingCategory.Paper),
+            new Entry("묶은 헌책",          90, 2, MaterialKind.General,   0.70f, 2.00f, RecyclingCategory.Paper),
+            new Entry("찌그러진 캔",         35, 1, MaterialKind.Metal,     0.75f, 1.90f, RecyclingCategory.Can),
+            new Entry("통조림 캔",          50, 1, MaterialKind.Metal,     0.84f, 1.74f, RecyclingCategory.Can),
+            new Entry("생수 페트병",         40, 1, MaterialKind.Plastic,   1.00f, 1.90f, RecyclingCategory.Pet),
+            new Entry("탄산 페트병",         55, 1, MaterialKind.Plastic,   1.08f, 1.74f, RecyclingCategory.Pet),
+            new Entry("플라스틱 반찬통",       60, 1, MaterialKind.Plastic,   0.88f, 2.60f, RecyclingCategory.Plastic),
+            new Entry("플라스틱 바가지",       80, 2, MaterialKind.Plastic,   1.14f, 2.85f, RecyclingCategory.Plastic),
+            new Entry("알루미늄 포일 뭉치",     55, 1, MaterialKind.Metal,     1.00f, 1.30f, RecyclingCategory.Aluminum),
+            new Entry("은박 접시",          70, 1, MaterialKind.Metal,     1.12f, 1.20f, RecyclingCategory.Aluminum),
+            new Entry("은박 포장지",         45, 1, MaterialKind.Metal,     0.92f, 1.14f, RecyclingCategory.Aluminum),
         };
 
-        // 시작 지점 보장 배치용. 재활용하면 첫날 할당량 대부분을 안정적으로 채운다.
+        // ---------- 시작 지점 보장 배치용. 5개 칸이 정확히 한 번씩 돌아간다 ----------
         static readonly Entry[] StarterLoot =
         {
-            new Entry("종이 묶음", 50, 1, MaterialKind.General, .9f, 3f, RecyclingCategory.Paper),
-            new Entry("페트병", 50, 1, MaterialKind.Plastic, 1f, 3f, RecyclingCategory.Pet),
-            new Entry("알루미늄 포일", 50, 1, MaterialKind.Metal, 1f, 3f, RecyclingCategory.Aluminum),
-            new Entry("재활용 비닐 묶음", 35, 1, MaterialKind.General, 0.68f, 5f, RecyclingCategory.Plastic),
-            new Entry("분리수거 캔",     45, 1, MaterialKind.Metal,   0.82f, 4f, RecyclingCategory.Can),
-            new Entry("반납용 유리병",   55, 1, MaterialKind.Glass,   0.96f, 3f),
+            new Entry("신문지 묶음",         45, 1, MaterialKind.General,   0.92f, 2.20f, RecyclingCategory.Paper),
+            new Entry("생수 페트병",         50, 1, MaterialKind.Plastic,   1.00f, 2.20f, RecyclingCategory.Pet),
+            new Entry("통조림 캔",          50, 1, MaterialKind.Metal,     0.84f, 2.20f, RecyclingCategory.Can),
+            new Entry("플라스틱 반찬통",       55, 1, MaterialKind.Plastic,   0.88f, 2.20f, RecyclingCategory.Plastic),
+            new Entry("알루미늄 포일 뭉치",     50, 1, MaterialKind.Metal,     1.00f, 1.10f, RecyclingCategory.Aluminum),
+            new Entry("은박 접시",          60, 1, MaterialKind.Metal,     1.12f, 1.10f, RecyclingCategory.Aluminum),
         };
 
-        // ---------- 2층: 90년대 층 — 가전 ----------
+        // ---------- 2층: 90년대 층 — 그 시절 포장재 ----------
         static readonly Entry[] ShallowLoot =
         {
-            new Entry("카세트테이프",    70,  1, MaterialKind.Plastic,     0.58f, 4f, RecyclingCategory.Plastic),
-            new Entry("워크맨",          180, 1, MaterialKind.Electronics, 0.72f, 3.0f),
-            new Entry("휴대용 게임기",   300, 1, MaterialKind.Electronics, 0.88f, 2.5f),
-            new Entry("초기형 휴대전화", 480, 1, MaterialKind.Electronics, 1.02f, 1.8f),
-            new Entry("은제 라이터",     720, 1, MaterialKind.Relic,       1.16f, 1.0f),
-            new Entry("한정판 게임팩",   950, 1, MaterialKind.Relic,       1.26f, 0.6f),
-            new Entry("녹슨 자전거",    90,  3, MaterialKind.Metal,       0.62f, 4f),
-            new Entry("깨진 어항",      130, 2, MaterialKind.Glass,       0.75f, 3f),
-            new Entry("장난감 상자",    160, 2, MaterialKind.Plastic,     0.88f, 3f, RecyclingCategory.Plastic),
-            new Entry("브라운관 TV",    380, 4, MaterialKind.Electronics, 1.00f, 2f),
-            new Entry("오락기 기판",    550, 2, MaterialKind.Electronics, 1.15f, 1.2f),
-            new Entry("금도금 시계",    800, 1, MaterialKind.Relic,       1.25f, 0.5f),
+            new Entry("90년대 잡지 더미",    140, 2, MaterialKind.General,   0.70f, 2.40f, RecyclingCategory.Paper),
+            new Entry("만화책 더미",        220, 3, MaterialKind.General,   0.58f, 2.20f, RecyclingCategory.Paper),
+            new Entry("레코드 속지 묶음",     180, 1, MaterialKind.General,   0.88f, 1.95f, RecyclingCategory.Paper),
+            new Entry("옛날 음료 캔",       150, 1, MaterialKind.Metal,     0.76f, 1.90f, RecyclingCategory.Can),
+            new Entry("분유 깡통",         200, 1, MaterialKind.Metal,     0.92f, 1.74f, RecyclingCategory.Can),
+            new Entry("초기형 페트병",       170, 1, MaterialKind.Plastic,   1.02f, 1.90f, RecyclingCategory.Pet),
+            new Entry("1.5L 탄산병",      240, 2, MaterialKind.Plastic,   1.12f, 4.80f, RecyclingCategory.Pet),
+            new Entry("카세트 보관함",       230, 1, MaterialKind.Plastic,   0.64f, 2.20f, RecyclingCategory.Plastic),
+            new Entry("장난감 수납 상자",     280, 2, MaterialKind.Plastic,   1.00f, 2.20f, RecyclingCategory.Plastic),
+            new Entry("우유 운반 상자",      320, 3, MaterialKind.Plastic,   1.20f, 1.75f, RecyclingCategory.Plastic),
+            new Entry("은박 과자봉지 뭉치",    190, 1, MaterialKind.Metal,     0.82f, 1.90f, RecyclingCategory.Aluminum),
+            new Entry("알루미늄 도시락",      260, 1, MaterialKind.Metal,     1.16f, 1.74f, RecyclingCategory.Aluminum),
         };
 
-        // ---------- 3층: 산업 폐기물층 ----------
+        // ---------- 3층: 산업 폐기물층 — 공장에서 나온 자재 ----------
         static readonly Entry[] DeepLoot =
         {
-            new Entry("구리선 뭉치",    260,  1, MaterialKind.Metal,       0.56f, 4f),
-            new Entry("산업용 센서",    600,  1, MaterialKind.Electronics, 0.68f, 3.2f),
-            new Entry("정밀 계측 칩",   900,  1, MaterialKind.Electronics, 0.82f, 2.8f),
-            new Entry("백금 촉매",      1400, 1, MaterialKind.Metal,       0.98f, 2.2f),
-            new Entry("군용 통신 모듈", 2100, 1, MaterialKind.Electronics, 1.12f, 1.6f),
-            new Entry("항공기 블랙박스",3200, 1, MaterialKind.Relic,       1.26f, 0.9f),
-            new Entry("고철 덩어리",    350,  3, MaterialKind.Metal,       0.62f, 4f),
-            new Entry("산업용 유리판",  480,  2, MaterialKind.Glass,       0.75f, 2.5f),
-            new Entry("폐배터리 액",    700,  2, MaterialKind.Hazard,      0.88f, 2.5f),
-            new Entry("공장 제어반",    1100, 3, MaterialKind.Electronics, 1.00f, 2f),
-            new Entry("의료 폐기물",    1500, 2, MaterialKind.Hazard,      1.12f, 1.2f),
-            new Entry("놋쇠 촛대",      2200, 2, MaterialKind.Relic,       1.25f, 0.5f),
+            new Entry("공장 출하 서류함",     480, 2, MaterialKind.General,   0.62f, 2.40f, RecyclingCategory.Paper),
+            new Entry("설계도 뭉치",        900, 1, MaterialKind.General,   0.88f, 1.95f, RecyclingCategory.Paper),
+            new Entry("방수 포장지 묶음",     620, 2, MaterialKind.General,   0.74f, 2.20f, RecyclingCategory.Paper),
+            new Entry("윤활유 빈 캔",       700, 1, MaterialKind.Metal,     0.58f, 1.90f, RecyclingCategory.Can),
+            new Entry("스틸 드럼 조각",      950, 2, MaterialKind.Metal,     0.70f, 4.80f, RecyclingCategory.Can),
+            new Entry("압착 페트 더미",       760, 1, MaterialKind.Plastic,   1.00f, 1.90f, RecyclingCategory.Pet),
+            new Entry("대용량 페트 탱크",    1150, 3, MaterialKind.Plastic,   1.14f, 4.80f, RecyclingCategory.Pet),
+            new Entry("공업용 플라스틱 통",    880, 1, MaterialKind.Plastic,   0.84f, 1.90f, RecyclingCategory.Plastic),
+            new Entry("부품 적재함",       1300, 3, MaterialKind.Plastic,   1.22f, 4.80f, RecyclingCategory.Plastic),
+            new Entry("알루미늄 방열판",     1050, 1, MaterialKind.Metal,     0.96f, 1.90f, RecyclingCategory.Aluminum),
+            new Entry("은박 단열재 뭉치",    1250, 2, MaterialKind.Metal,     1.08f, 2.40f, RecyclingCategory.Aluminum),
+            new Entry("알루미늄 샷시 조각",   1450, 2, MaterialKind.Metal,     1.26f, 2.30f, RecyclingCategory.Aluminum),
         };
 
-        // ---------- 4층: 봉인된 최심층 ----------
+        // ---------- 4층: 봉인된 최심층 — 고대의 포장 ----------
         static readonly Entry[] AbyssLoot =
         {
-            new Entry("희귀 금속 조각", 1400,  1, MaterialKind.Metal,       0.54f, 3.5f),
-            new Entry("초전도 코일",    2200,  1, MaterialKind.Electronics, 0.66f, 3.5f),
-            new Entry("운석 합금 파편", 3600,  1, MaterialKind.Metal,       0.80f, 3.0f),
-            new Entry("고대 금화 주머니",5500, 1, MaterialKind.Relic,       0.94f, 2.5f),
-            new Entry("봉인된 보석함",  8500,  1, MaterialKind.Relic,       1.08f, 2.0f),
-            new Entry("왕실 인장",      13000, 1, MaterialKind.Relic,       1.18f, 1.3f),
-            new Entry("미확인 데이터 코어",20000,1,MaterialKind.Electronics,1.28f,0.8f),
-            new Entry("정체불명 합금",  1800,  3, MaterialKind.Metal,       0.62f, 3.5f),
-            new Entry("방사성 폐기물",  3200,  3, MaterialKind.Hazard,      0.78f, 2.5f),
-            new Entry("고대 축음기",    5000,  4, MaterialKind.Electronics, 0.95f, 2f),
-            new Entry("골동품 도자기",  8000,  2, MaterialKind.Relic,       1.10f, 1.2f),
-            new Entry("금괴",           15000, 2, MaterialKind.Relic,       1.25f, 0.5f),
+            new Entry("고대 금박 두루마리",   4200, 1, MaterialKind.General,   0.94f, 1.95f, RecyclingCategory.Paper),
+            new Entry("봉인 문서함",       6000, 2, MaterialKind.General,   0.74f, 2.40f, RecyclingCategory.Paper),
+            new Entry("고문서 묶음",       9500, 2, MaterialKind.General,   0.58f, 2.20f, RecyclingCategory.Paper),
+            new Entry("의례용 청동 깡통",    4000, 1, MaterialKind.Metal,     0.62f, 1.90f, RecyclingCategory.Can),
+            new Entry("밀봉된 합금 캔",     6500, 1, MaterialKind.Metal,     0.80f, 1.74f, RecyclingCategory.Can),
+            new Entry("유리질 페트 용기",    5000, 1, MaterialKind.Plastic,   1.02f, 1.90f, RecyclingCategory.Pet),
+            new Entry("미지의 수액 페트",    7500, 2, MaterialKind.Plastic,   1.14f, 4.80f, RecyclingCategory.Pet),
+            new Entry("합성수지 보관통",     5600, 1, MaterialKind.Plastic,   0.86f, 2.60f, RecyclingCategory.Plastic),
+            new Entry("봉인 보관함",       9000, 3, MaterialKind.Plastic,   1.22f, 2.60f, RecyclingCategory.Plastic),
+            new Entry("은박 봉인포",       6800, 1, MaterialKind.Metal,     1.00f, 1.30f, RecyclingCategory.Aluminum),
+            new Entry("알루미늄 제의 접시",   9500, 2, MaterialKind.Metal,     1.10f, 2.40f, RecyclingCategory.Aluminum),
+            new Entry("초경량 합금 포일",   14000, 1, MaterialKind.Metal,     1.28f, 1.20f, RecyclingCategory.Aluminum),
         };
 
         // ---------- 광산 산출물 (고철류) ----------
@@ -113,6 +114,26 @@ namespace DigGame
             new Color32(220, 220, 230, 255),
             new Color32(242, 198, 62, 255)
         };
+
+        /// <summary>
+        /// 모든 층 + 시작 지점의 품목을 대표값으로 한 번씩 돌려준다.
+        /// 에디터 검증(그림-분리수거 칸 일치)에서 쓴다.
+        /// </summary>
+        public static System.Collections.Generic.IEnumerable<LootItem> AllEntries()
+        {
+            foreach (Zone zone in System.Enum.GetValues(typeof(Zone)))
+            {
+                Entry[] table = TableFor(zone);
+                Color sig = ZoneInfo.SignatureColor(zone);
+                for (int i = 0; i < table.Length; i++) yield return Preview(table[i], sig);
+            }
+
+            Color surface = ZoneInfo.SignatureColor(Zone.Surface);
+            for (int i = 0; i < StarterLoot.Length; i++) yield return Preview(StarterLoot[i], surface);
+        }
+
+        static LootItem Preview(Entry e, Color sig) =>
+            new LootItem(e.Name, e.BaseValue, Shaded(sig, e.Shade), e.Volume, e.Material, e.Category);
 
         static Entry[] TableFor(Zone z)
         {

@@ -17,7 +17,8 @@ namespace DigGame
 
             public ArtRef(string file, int frameWidth = 0)
             {
-                Path = Root + file;
+                // '/' 가 들어 있으면 Resources 기준 전체 경로로 본다 (Diverse 밖의 그림).
+                Path = file.IndexOf('/') >= 0 ? file : Root + file;
                 FrameWidth = frameWidth;
                 CacheKey = Path + "#" + frameWidth;
             }
@@ -33,6 +34,111 @@ namespace DigGame
                 Keyword = keyword;
                 Art = new ArtRef(file, frameWidth);
             }
+        }
+
+        const string RecycleRoot = "TrashSprites/Recycle/";
+
+        static ArtRef R(string file) => new ArtRef(RecycleRoot + file);
+
+        /// <summary>
+        /// 분리수거 칸이 정해진 물건은 반드시 그 칸의 그림만 쓴다.
+        /// 그림과 칸이 어긋나면 2초 안에 판단해야 하는 분류가 불공정해진다.
+        /// 순서는 RecyclingCategory (Specialist, Can, Pet, Paper, Plastic, Aluminum).
+        /// </summary>
+        static readonly ArtRef[][] CategoryArt =
+        {
+            new ArtRef[0],
+            new[] { R("can_steel"), R("can_drink"), R("can_crushed") },
+            new[] { R("pet_water"), R("pet_soda"), R("pet_crushed") },
+            new[] { R("paper_news"), R("paper_box"), R("paper_books") },
+            new[] { R("plastic_tub"), R("plastic_basin"), R("plastic_crate") },
+            new[] { R("foil_ball"), R("foil_tray"), R("foil_sheet") },
+        };
+
+        /// <summary>
+        /// 품목 이름에 딱 맞는 그림. 더 구체적인 단어를 앞에 둔다.
+        /// 여기서 고른 그림이라도 그 물건의 칸에 없으면 버린다 (아래 FindCategoryArt 참고).
+        /// </summary>
+        static readonly KeywordArt[] RecycleKeywordMap =
+        {
+            // 종이
+            new KeywordArt("신문지",   "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("골판지",   "TrashSprites/Recycle/paper_box"),
+            new KeywordArt("헌책",     "TrashSprites/Recycle/paper_books"),
+            new KeywordArt("만화책",   "TrashSprites/Recycle/paper_books"),
+            new KeywordArt("고문서",   "TrashSprites/Recycle/paper_books"),
+            new KeywordArt("잡지",     "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("속지",     "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("설계도",   "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("두루마리", "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("방수 포장지", "TrashSprites/Recycle/paper_news"),
+            new KeywordArt("서류함",   "TrashSprites/Recycle/paper_box"),
+            new KeywordArt("문서함",   "TrashSprites/Recycle/paper_box"),
+            // 캔
+            new KeywordArt("찌그러진 캔", "TrashSprites/Recycle/can_crushed"),
+            new KeywordArt("드럼",     "TrashSprites/Recycle/can_crushed"),
+            new KeywordArt("통조림",   "TrashSprites/Recycle/can_steel"),
+            new KeywordArt("분유",     "TrashSprites/Recycle/can_steel"),
+            new KeywordArt("윤활유",   "TrashSprites/Recycle/can_steel"),
+            new KeywordArt("청동 깡통", "TrashSprites/Recycle/can_steel"),
+            new KeywordArt("음료 캔",  "TrashSprites/Recycle/can_drink"),
+            new KeywordArt("합금 캔",  "TrashSprites/Recycle/can_drink"),
+            // 페트
+            new KeywordArt("생수",     "TrashSprites/Recycle/pet_water"),
+            new KeywordArt("초기형 페트", "TrashSprites/Recycle/pet_water"),
+            new KeywordArt("압착",     "TrashSprites/Recycle/pet_crushed"),
+            new KeywordArt("유리질 페트", "TrashSprites/Recycle/pet_water"),
+            new KeywordArt("탄산",     "TrashSprites/Recycle/pet_soda"),
+            new KeywordArt("페트 탱크", "TrashSprites/Recycle/pet_soda"),
+            new KeywordArt("수액 페트", "TrashSprites/Recycle/pet_soda"),
+            // 플라스틱
+            new KeywordArt("반찬통",   "TrashSprites/Recycle/plastic_tub"),
+            new KeywordArt("보관통",   "TrashSprites/Recycle/plastic_tub"),
+            new KeywordArt("보관함",   "TrashSprites/Recycle/plastic_tub"),
+            new KeywordArt("바가지",   "TrashSprites/Recycle/plastic_basin"),
+            new KeywordArt("플라스틱 통", "TrashSprites/Recycle/plastic_basin"),
+            new KeywordArt("수납 상자", "TrashSprites/Recycle/plastic_crate"),
+            new KeywordArt("운반 상자", "TrashSprites/Recycle/plastic_crate"),
+            new KeywordArt("적재함",   "TrashSprites/Recycle/plastic_crate"),
+            // 알루미늄
+            new KeywordArt("포일 뭉치", "TrashSprites/Recycle/foil_ball"),
+            new KeywordArt("과자봉지", "TrashSprites/Recycle/foil_ball"),
+            new KeywordArt("단열재",   "TrashSprites/Recycle/foil_ball"),
+            new KeywordArt("접시",     "TrashSprites/Recycle/foil_tray"),
+            new KeywordArt("도시락",   "TrashSprites/Recycle/foil_tray"),
+            new KeywordArt("방열판",   "TrashSprites/Recycle/foil_sheet"),
+            new KeywordArt("샷시",     "TrashSprites/Recycle/foil_sheet"),
+            new KeywordArt("봉인포",   "TrashSprites/Recycle/foil_sheet"),
+            new KeywordArt("합금 포일", "TrashSprites/Recycle/foil_sheet"),
+            new KeywordArt("포장지",   "TrashSprites/Recycle/foil_sheet"),
+        };
+
+        /// <summary>
+        /// 그 물건의 칸에 속한 그림만 돌려준다.
+        /// 이름에 맞는 그림이 없으면 칸 안에서 이름 해시로 고정 배정한다
+        /// (같은 이름은 늘 같은 그림이라, 플레이어가 그림으로 외울 수 있다).
+        /// </summary>
+        static ArtRef FindCategoryArt(LootItem item)
+        {
+            int category = (int)item.Category;
+            if (category <= 0 || category >= CategoryArt.Length) return default;
+
+            ArtRef[] choices = CategoryArt[category];
+            if (choices.Length == 0) return default;
+
+            if (!string.IsNullOrEmpty(item.Name))
+            {
+                for (int i = 0; i < RecycleKeywordMap.Length; i++)
+                {
+                    var candidate = RecycleKeywordMap[i];
+                    if (item.Name.IndexOf(candidate.Keyword, System.StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    for (int j = 0; j < choices.Length; j++)
+                        if (choices[j].Path == candidate.Art.Path) return candidate.Art;
+                }
+            }
+
+            return choices[StableIndex(item.Name, choices.Length)];
         }
 
         // 더 구체적인 단어를 먼저 둬서 실제 아이템 이름과 가장 가까운 그림을 선택한다.
@@ -109,6 +215,10 @@ namespace DigGame
 
         public static Sprite For(LootItem item)
         {
+            // 분리수거 칸이 있으면 그 칸의 그림이 최우선이다.
+            ArtRef categoryArt = FindCategoryArt(item);
+            if (!string.IsNullOrEmpty(categoryArt.Path)) return Load(categoryArt);
+
             Sprite illustration = RecyclingItemSprites.For(item);
             if (illustration != null) return illustration;
             ArtRef art = FindByName(item.Name);
