@@ -5,6 +5,7 @@ namespace DigGame
     public sealed class RecyclingMinigameUI : MonoBehaviour
     {
         RecyclingMinigameController _controller;
+        PixelUISkin _skin;
         GUIStyle _label, _title, _button, _cardLabel;
         static readonly string[] ButtonLabels = { "1\n캔", "2\n페트병", "3\n종이", "4\n플라스틱", "5\n알루미늄" };
         public void Bind(RecyclingMinigameController controller) => _controller = controller;
@@ -13,11 +14,18 @@ namespace DigGame
             if (_controller == null || !_controller.IsOpen) return;
             if (_label == null)
             {
-                var font = _controller.Game.Hud != null ? _controller.Game.Hud.UIFont : null;
+                var hud = _controller.Game.Hud;
+                var font = hud != null ? hud.UIFont : null;
+                _skin = hud != null ? hud.UISkin : null;
                 _label = new GUIStyle(GUI.skin.label) { font = font, fontSize = 19, alignment = TextAnchor.MiddleCenter, wordWrap = true };
                 _cardLabel = new GUIStyle(_label);
                 _title = new GUIStyle(_label) { fontSize = 32, fontStyle = FontStyle.Bold };
-                _button = new GUIStyle(GUI.skin.button) { font = font, fontSize = 20, wordWrap = true };
+                _button = new GUIStyle(_skin != null ? _skin.ButtonStyle : GUI.skin.button)
+                    { font = font, fontSize = 20, wordWrap = true };
+                Color cream = new Color32(246, 232, 196, 255);
+                _label.normal.textColor = cream;
+                _title.normal.textColor = cream;
+                _cardLabel.normal.textColor = cream;
             }
             var matrix = GUI.matrix; var color = GUI.color; bool enabled = GUI.enabled; int depth = GUI.depth;
             try
@@ -26,17 +34,17 @@ namespace DigGame
                 Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(.015f,.025f,.04f,.96f));
                 float scale = Mathf.Min(Screen.width / 1000f, Screen.height / 700f);
                 GUI.matrix = Matrix4x4.TRS(new Vector3((Screen.width-1000*scale)/2, (Screen.height-700*scale)/2), Quaternion.identity, Vector3.one*scale);
+                if (_skin != null) _skin.DrawPanel(new Rect(24, 12, 952, 676), .96f);
                 var session = _controller.Session;
                 GUI.Label(new Rect(60,25,650,50), "분리수거 작업대", _title);
                 if (GUI.Button(new Rect(835,30,120,42), "닫기  Esc", _button)) { _controller.Close(); return; }
                 GUI.Label(new Rect(60,80,880,35), $"대기 {session.Queue.Count}/{RecyclingQueue.MaxCapacity}개   ·   오염도 {session.Pollution.Value}/{PollutionMeter.MaxValue}칸   ·   마감까지 {Mathf.CeilToInt(_controller.Game.TimeLeft)}초", _label);
-                Fill(new Rect(60,120,880,8), new Color(.15f,.2f,.25f));
-                Fill(new Rect(60,120,880*session.Pollution.Value/(float)PollutionMeter.MaxValue,8), new Color(.65f,.25f,.90f));
+                DrawBar(new Rect(60,120,880,12), session.Pollution.Value/(float)PollutionMeter.MaxValue,
+                    new Color(.65f,.25f,.90f));
                 if (session.State == RecyclingState.Ready)
                 {
                     GUI.Label(new Rect(310,132,380,26), $"남은 시간  {session.AnswerTimeRemaining:0.0}초", _label);
-                    Fill(new Rect(310,158,380,8), new Color(.15f,.2f,.25f));
-                    Fill(new Rect(310,158,380*(1f-session.AnswerProgress),8),
+                    DrawBar(new Rect(310,158,380,12), 1f-session.AnswerProgress,
                         session.AnswerTimeRemaining <= .6f ? new Color(.95f,.25f,.30f) : new Color(1f,.72f,.20f));
                 }
                 if (session.State == RecyclingState.Completed)
@@ -80,8 +88,13 @@ namespace DigGame
         void Card(Rect rect, LootItem item, float alpha, Color border)
         {
             Color old=GUI.color; GUI.color=new Color(1,1,1,alpha);
-            Fill(rect,border); var inner=new Rect(rect.x+4,rect.y+4,rect.width-8,rect.height-8);
-            Fill(inner,new Color(.09f,.13f,.18f));
+            if (_skin != null) _skin.DrawItemCard(rect);
+            else
+            {
+                Fill(rect,border);
+                var inner=new Rect(rect.x+4,rect.y+4,rect.width-8,rect.height-8);
+                Fill(inner,new Color(.09f,.13f,.18f));
+            }
             Sprite sprite=TrashSpriteCatalog.For(item);
             if (sprite!=null)
             {
@@ -92,6 +105,17 @@ namespace DigGame
             _cardLabel.fontSize=rect.width<200 ? 15 : 21;
             GUI.Label(new Rect(rect.x+8,rect.yMax-55,rect.width-16,50),item.Name,_cardLabel);
             GUI.color=old;
+        }
+        void DrawBar(Rect rect, float amount, Color fill)
+        {
+            Rect inner = rect;
+            if (_skin != null)
+            {
+                _skin.DrawBarFrame(rect);
+                inner = new Rect(rect.x + 5f, rect.y + 3f, rect.width - 10f, rect.height - 6f);
+            }
+            else Fill(rect, new Color(.15f,.2f,.25f));
+            Fill(new Rect(inner.x, inner.y, inner.width * Mathf.Clamp01(amount), inner.height), fill);
         }
         static void Fill(Rect rect,Color color)
         {

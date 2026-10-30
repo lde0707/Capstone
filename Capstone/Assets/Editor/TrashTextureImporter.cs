@@ -9,13 +9,15 @@ namespace DigGame.Editor
         const string TrashFolder = "Assets/Resources/TrashSprites/";
         const string EnvironmentFolder = "Assets/Resources/EnvironmentPixel/";
         const string PixelRefreshFolder = "Assets/Resources/PixelRefresh/";
+        const string PixelUiFolder = "Assets/Resources/PixelUI/";
 
         void OnPreprocessTexture()
         {
             bool isTrash = assetPath.StartsWith(TrashFolder, System.StringComparison.OrdinalIgnoreCase);
             bool isEnvironment = assetPath.StartsWith(EnvironmentFolder, System.StringComparison.OrdinalIgnoreCase);
             bool isPixelRefresh = assetPath.StartsWith(PixelRefreshFolder, System.StringComparison.OrdinalIgnoreCase);
-            if (!isTrash && !isEnvironment && !isPixelRefresh) return;
+            bool isPixelUi = assetPath.StartsWith(PixelUiFolder, System.StringComparison.OrdinalIgnoreCase);
+            if (!isTrash && !isEnvironment && !isPixelRefresh && !isPixelUi) return;
 
             var importer = (TextureImporter)assetImporter;
             importer.textureType = TextureImporterType.Default;

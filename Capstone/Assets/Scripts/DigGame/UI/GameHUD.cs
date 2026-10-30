@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 
 namespace DigGame
 {
-    /// <summary>프로토타입용 IMGUI HUD. 캔버스/폰트 에셋 없이 바로 동작한다.</summary>
+    /// <summary>쓰집소 픽셀 스킨을 사용하는 IMGUI HUD.</summary>
     public class GameHUD : MonoBehaviour
     {
         const float MarginX = 28f;
@@ -25,6 +25,8 @@ namespace DigGame
         GameManager _game;
         Font _font;
         public Font UIFont => _font;
+        PixelUISkin _skin;
+        public PixelUISkin UISkin => _skin;
         GUIStyle _label, _small, _micro, _title, _big, _center, _button, _buttonSmall, _tab, _tabOn;
         GUIStyle _nameplate;
         GUIStyle _questBubbleText, _questBang, _fullBubbleText;
@@ -41,15 +43,20 @@ namespace DigGame
             if (game != null) game.Hud = this;
         }
 
-        /// <summary>패널 배경. 반투명 사각형 한 장.</summary>
-        void Panel(Rect r, Color c) => Fill(r, c);
+        /// <summary>픽셀 동굴 프레임 패널. 스킨 누락 시 단색 배경으로 대체한다.</summary>
+        void Panel(Rect r, Color c)
+        {
+            if (_skin != null) _skin.DrawPanel(r, c.a);
+            else Fill(r, c);
+        }
 
         void Awake()
         {
             _white = new Texture2D(1, 1) { hideFlags = HideFlags.DontSave };
             _white.SetPixel(0, 0, Color.white);
             _white.Apply();
-            _font = LoadKoreanFont();
+            _skin = PixelUISkin.Load();
+            _font = _skin != null && _skin.Font != null ? _skin.Font : LoadKoreanFont();
         }
 
         void OnDestroy()
@@ -128,10 +135,12 @@ namespace DigGame
             {
                 fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true
             };
-            _button = new GUIStyle(GUI.skin.button) { fontSize = 15, richText = true };
-            _buttonSmall = new GUIStyle(GUI.skin.button) { fontSize = 13, richText = true };
-            _tab = new GUIStyle(GUI.skin.button) { fontSize = 14, richText = true };
-            _tabOn = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, richText = true };
+            GUIStyle buttonBase = _skin != null ? _skin.ButtonStyle : GUI.skin.button;
+            GUIStyle selectedButtonBase = _skin != null ? _skin.HighlightButtonStyle : GUI.skin.button;
+            _button = new GUIStyle(buttonBase) { fontSize = 15, richText = true };
+            _buttonSmall = new GUIStyle(buttonBase) { fontSize = 13, richText = true };
+            _tab = new GUIStyle(buttonBase) { fontSize = 14, richText = true };
+            _tabOn = new GUIStyle(selectedButtonBase) { fontSize = 14, fontStyle = FontStyle.Bold, richText = true };
             _nameplate = new GUIStyle(GUI.skin.label)
             {
                 fontSize = 14,
@@ -286,10 +295,16 @@ namespace DigGame
         {
             const int slots = PollutionMeter.MaxValue;
             const float gap = 2f;
-            float slotW = (r.width - gap * (slots - 1)) / slots;
+            Rect track = r;
+            if (_skin != null)
+            {
+                _skin.DrawBarFrame(r);
+                track = new Rect(r.x + 5f, r.y + 4f, r.width - 10f, r.height - 8f);
+            }
+            float slotW = (track.width - gap * (slots - 1)) / slots;
             for (int i = 0; i < slots; i++)
             {
-                var slot = new Rect(r.x + i * (slotW + gap), r.y, slotW, r.height);
+                var slot = new Rect(track.x + i * (slotW + gap), track.y, slotW, track.height);
                 Fill(slot, i < value
                     ? new Color32(151, 67, 211, 255)
                     : new Color(1f, 1f, 1f, 0.13f));
@@ -300,8 +315,14 @@ namespace DigGame
 
         void Bar(Rect r, float t, Color color, string text)
         {
-            Fill(r, new Color(1f, 1f, 1f, 0.13f));
-            Fill(new Rect(r.x, r.y, r.width * Mathf.Clamp01(t), r.height), color);
+            Rect track = r;
+            if (_skin != null)
+            {
+                _skin.DrawBarFrame(r);
+                track = new Rect(r.x + 5f, r.y + 4f, r.width - 10f, r.height - 8f);
+            }
+            else Fill(r, new Color(1f, 1f, 1f, 0.13f));
+            Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(t), track.height), color);
             GUI.Label(new Rect(r.x + 7, r.y - 1, r.width, r.height + 3), text, _small);
         }
 
@@ -425,16 +446,16 @@ namespace DigGame
             if (p.IsDigging)
             {
                 var pr = new Rect(Screen.width * 0.5f - 110, Screen.height - 92, 220, 18);
-                Fill(new Rect(pr.x - 2, pr.y - 2, pr.width + 4, pr.height + 4), new Color(0, 0, 0, 0.6f));
-                Fill(pr, new Color(1f, 1f, 1f, 0.15f));
-                Fill(new Rect(pr.x, pr.y, pr.width * p.DigProgress01, pr.height), new Color32(232, 192, 92, 255));
+                Bar(pr, p.DigProgress01, new Color32(232, 192, 92, 255), "");
                 GUI.Label(new Rect(pr.x, pr.y - 22, pr.width, 20), "굴착 중...", _small);
             }
 
             if (!string.IsNullOrEmpty(p.BlockedReason))
             {
                 var br = new Rect(Screen.width * 0.5f - 230, Screen.height - 58, 460, 26);
-                Fill(br, new Color(0.42f, 0.10f, 0.10f, 0.78f));
+                Panel(br, new Color(0.42f, 0.10f, 0.10f, 0.88f));
+                Fill(new Rect(br.x + 7f, br.y + 6f, br.width - 14f, br.height - 12f),
+                    new Color(0.42f, 0.10f, 0.10f, 0.36f));
                 GUI.Label(new Rect(br.x + 12, br.y + 3, br.width - 24, 22), p.BlockedReason, _label);
             }
 
@@ -443,8 +464,7 @@ namespace DigGame
             {
                 Color featureColor = DigFeatureInfo.ColorOf(feature);
                 var fr = new Rect(Screen.width * 0.5f - 210, 64, 420, 34);
-                Fill(fr, new Color(featureColor.r * 0.25f, featureColor.g * 0.25f,
-                    featureColor.b * 0.25f, 0.92f));
+                Panel(fr, new Color(featureColor.r, featureColor.g, featureColor.b, 0.92f));
                 GUI.Label(new Rect(fr.x + 12, fr.y + 6, fr.width - 24, 23),
                     $"<b>{DigFeatureInfo.DisplayName(feature)}</b> — {DigFeatureInfo.Description(feature)}", _label);
             }
@@ -454,7 +474,7 @@ namespace DigGame
             {
                 float y = feature != DigFeature.None ? 102f : 64f;
                 var sr = new Rect(Screen.width * 0.5f - 145, y, 290, 30);
-                Fill(sr, new Color(0.18f, 0.12f, 0.05f, 0.90f));
+                Panel(sr, new Color(0.18f, 0.12f, 0.05f, 0.90f));
                 GUI.Label(new Rect(sr.x + 12, sr.y + 4, sr.width - 24, 22),
                     $"<b>힘 강화</b> — 굴착 속도 +{digSpeedBonus}%", _label);
             }
@@ -514,7 +534,7 @@ namespace DigGame
                 if (text != null)
                 {
                     var hr = new Rect(Screen.width * 0.5f - 210, 26, 420, 30);
-                    Fill(hr, tint);
+                    Panel(hr, tint);
                     GUI.Label(new Rect(hr.x + 14, hr.y + 5, hr.width - 20, 22), text, _label);
                 }
             }
@@ -526,7 +546,7 @@ namespace DigGame
                 // 정보 표시일 뿐 버튼이 없으므로 클릭 차단 영역으로 등록하지 않는다.
                 var mr = new Rect(Screen.width - w - MarginX,
                     MarginY + TopRightHeight + 8f + RelicPanelHeight, w, 224);
-                Fill(mr, new Color(0.13f, 0.11f, 0.03f, 0.86f));
+                Panel(mr, new Color(0.13f, 0.11f, 0.03f, 0.90f));
 
                 float x = mr.x + 12, y = mr.y + 10, iw = mr.width - 24;
                 GUI.Label(new Rect(x, y, iw, 22), mine.Label, _label); y += 24;
@@ -574,7 +594,7 @@ namespace DigGame
             float h = RelicPanelHeight - 8f;
             var panel = new Rect(Screen.width - w - MarginX,
                 MarginY + TopRightHeight + 8f, w, h);
-            Fill(panel, new Color(0.12f, 0.06f, 0.20f, 0.86f));
+            Panel(panel, new Color(0.12f, 0.06f, 0.20f, 0.90f));
 
             float x = panel.x + 12, y = panel.y + 8, iw = panel.width - 24;
             GUI.Label(new Rect(x, y, iw, 22),
@@ -589,9 +609,7 @@ namespace DigGame
             {
                 var def = RelicCatalog.Get(r.Queue[0].RelicId);
                 var bar = new Rect(x, y, iw, 16);
-                Fill(bar, new Color(1f, 1f, 1f, 0.12f));
-                Fill(new Rect(bar.x, bar.y, bar.width * r.FrontProgress01, bar.height),
-                    new Color32(186, 122, 240, 255));
+                Bar(bar, r.FrontProgress01, new Color32(186, 122, 240, 255), "");
                 GUI.Label(new Rect(bar.x + 6, bar.y - 2, bar.width - 12, 20),
                     $"<b>{(def != null ? def.Name : "")}</b> 복원 중" +
                     (r.QueueCount > 1 ? $"  (대기 {r.QueueCount - 1})" : ""), _small);
@@ -683,7 +701,8 @@ namespace DigGame
             bool found = sys.IsFound(def.Id);
             bool pending = sys.IsPending(def.Id);
 
-            Fill(cell, restored ? new Color(0.17f, 0.13f, 0.24f, 1f)
+            if (_skin != null) _skin.DrawSlot(cell, restored, found ? 1f : 0.78f);
+            else Fill(cell, restored ? new Color(0.17f, 0.13f, 0.24f, 1f)
                 : found ? new Color(0.12f, 0.11f, 0.14f, 1f)
                 : new Color(0.08f, 0.08f, 0.09f, 1f));
             Outline(cell, restored ? new Color(0.72f, 0.56f, 0.96f, 0.9f)
@@ -805,6 +824,7 @@ namespace DigGame
             float w = Mathf.Min(680f, Screen.width - 80f);
             float h = Mathf.Min(560f, Screen.height - 60f);
             var r = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.5f - h * 0.5f, w, h);
+            Panel(r, new Color(0.04f, 0.04f, 0.10f, 0.96f));
 
             float x = r.x, y = r.y, iw = r.width;
 
@@ -868,7 +888,7 @@ namespace DigGame
             y += 38;
 
             float bodyH = r.yMax - y - 52f;
-            Fill(new Rect(x, y, iw, bodyH), new Color(1f, 1f, 1f, 0.04f));
+            Panel(new Rect(x, y, iw, bodyH), new Color(1f, 1f, 1f, 0.42f));
 
             switch (_nightTab)
             {
@@ -1145,6 +1165,11 @@ namespace DigGame
 
         void DrawHotbarSlotFrame(Rect r, bool newest)
         {
+            if (_skin != null)
+            {
+                _skin.DrawSlot(r, newest);
+                return;
+            }
             Color border = newest
                 ? new Color(1f, 0.90f, 0.38f, 1f)
                 : new Color(0.70f, 0.70f, 0.74f, 1f);
@@ -1163,7 +1188,7 @@ namespace DigGame
                 slotY - h - 10f,
                 w,
                 h);
-            Fill(r, new Color(0.025f, 0.025f, 0.04f, 0.96f));
+            Panel(r, new Color(0.025f, 0.025f, 0.04f, 0.96f));
             Fill(new Rect(r.x, r.y, 3f, r.height), item.Color);
             GUI.Label(new Rect(r.x + 11f, r.y + 4f, r.width - 20f, 20f), $"<b>{item.Name}</b>", _label);
             GUI.Label(new Rect(r.x + 11f, r.y + 24f, r.width - 20f, 18f),
@@ -1235,12 +1260,16 @@ namespace DigGame
             Color outline = new Color(0.18f, 0.09f, 0.08f, 0.97f);
             Color body = new Color(1f, 0.88f, 0.62f, 0.98f);
 
-            Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f), outline);
-            Fill(bubble, body);
-            float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
-            Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), outline);
-            Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), body);
-            Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), outline);
+            if (_skin != null) _skin.DrawSpeechBubble(new Rect(bubble.x - 4f, bubble.y - 4f, bubble.width + 8f, bubble.height + 17f));
+            else
+            {
+                Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f), outline);
+                Fill(bubble, body);
+                float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
+                Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), outline);
+                Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), body);
+                Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), outline);
+            }
             GUI.Label(bubble, "가득 참!", _fullBubbleText);
         }
 
@@ -1264,18 +1293,23 @@ namespace DigGame
             float y = Mathf.Clamp(Screen.height - screen.y - h - 8f, 8f, Screen.height - h - 18f);
             var bubble = new Rect(x, y, w, h);
 
-            // 픽셀 스타일 말풍선: 어두운 테두리, 밝은 본체, 두 칸짜리 꼬리.
-            Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f),
-                new Color(0.12f, 0.08f, 0.16f, 0.96f));
-            Fill(bubble, new Color(1f, 0.97f, 0.88f, 0.98f));
-            float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
-            Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
-            Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), new Color(1f, 0.97f, 0.88f, 0.98f));
-            Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
+            if (_skin != null) _skin.DrawSpeechBubble(new Rect(bubble.x - 4f, bubble.y - 4f, bubble.width + 8f, bubble.height + 17f));
+            else
+            {
+                // 폴백 픽셀 말풍선: 어두운 테두리, 밝은 본체, 두 칸짜리 꼬리.
+                Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f),
+                    new Color(0.12f, 0.08f, 0.16f, 0.96f));
+                Fill(bubble, new Color(1f, 0.97f, 0.88f, 0.98f));
+                float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
+                Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
+                Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), new Color(1f, 0.97f, 0.88f, 0.98f));
+                Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
+            }
 
             // 느낌표는 별도 보라색 배지에 크게 그려 가장 먼저 읽히게 한다.
             var badge = new Rect(bubble.x + 8f, bubble.y + 9f, 46f, 46f);
-            Fill(badge, new Color32(139, 63, 196, 255));
+            if (_skin != null) _skin.DrawQuestBadge(badge);
+            else Fill(badge, new Color32(139, 63, 196, 255));
             GUI.Label(badge, "!", _questBang);
             GUI.Label(new Rect(bubble.x + 64f, bubble.y + 5f, bubble.width - 72f, bubble.height - 10f),
                 message, _questBubbleText);
@@ -1369,7 +1403,7 @@ namespace DigGame
             y = Mathf.Clamp(y, 2f, Mathf.Max(2f, Screen.height - h - 2f));
 
             var box = new Rect(x, y, w, h);
-            Fill(box, new Color(0.04f, 0.03f, 0.06f, 0.72f * plate.Alpha));
+            Panel(box, new Color(0.04f, 0.03f, 0.06f, 0.72f * plate.Alpha));
             Fill(new Rect(box.x, box.yMax - 2f, box.width, 2f),
                 new Color(0.98f, 0.84f, 0.49f, 0.85f * plate.Alpha));
 

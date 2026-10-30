@@ -84,6 +84,7 @@ namespace DigGame.Editor
             ValidateSurfaceEntrance();
             ValidateDayTiming();
             ValidateWorkerEconomy();
+            ValidatePixelUi();
         }
 
         static void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -651,6 +652,34 @@ namespace DigGame.Editor
             Debug.Log($"[DigGame] 자동 재활용 일꾼 — 하루 {cycles}회 · " +
                 $"지상 광산 총수익 최소 {minGross:N0} / 평균 {totalGross / samples:N0}원 · " +
                 $"고용비·일당 제외 첫날 순수익 최소 {firstDayNet:N0}원");
+        }
+
+        static void ValidatePixelUi()
+        {
+            string[] textures =
+            {
+                "panel", "button_normal", "button_highlight", "slot_normal", "slot_selected",
+                "bar_frame", "speech_bubble", "item_card", "quest_badge"
+            };
+
+            for (int i = 0; i < textures.Length; i++)
+            {
+                Texture2D texture = Resources.Load<Texture2D>($"PixelUI/{textures[i]}");
+                if (texture == null)
+                    throw new System.InvalidOperationException($"픽셀 UI 이미지가 없습니다: {textures[i]}");
+                if (texture.filterMode != FilterMode.Point)
+                    throw new System.InvalidOperationException($"픽셀 UI 필터가 Point가 아닙니다: {textures[i]}");
+            }
+
+            Font font = Resources.Load<Font>("Fonts/Galmuri11");
+            if (font == null)
+                throw new System.InvalidOperationException("한글 픽셀 폰트 Galmuri11을 불러오지 못했습니다.");
+
+            var skin = PixelUISkin.Load();
+            if (skin == null || skin.ButtonStyle.normal.background == null)
+                throw new System.InvalidOperationException("픽셀 UI 스킨을 생성하지 못했습니다.");
+
+            Debug.Log($"[DigGame] 픽셀 UI — 개별 이미지 {textures.Length}종 · Galmuri11 한글 폰트 검증 완료");
         }
     }
 }
