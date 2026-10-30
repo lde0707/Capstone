@@ -240,37 +240,56 @@ namespace DigGame.Editor
             if (textures == null || textures.Length != 29)
                 throw new System.InvalidOperationException($"CC0 픽셀 쓰레기 이미지가 {textures?.Length ?? 0}개만 임포트되었습니다.");
 
+            var recycle = Resources.LoadAll<Texture2D>("TrashSprites/Recycle");
+            if (recycle == null || recycle.Length != 15)
+                throw new System.InvalidOperationException($"분리수거 그림이 {recycle?.Length ?? 0}장만 임포트되었습니다 (5칸 x 3종).");
+
             for (int i = 0; i < textures.Length; i++)
                 if (textures[i] == null || textures[i].filterMode != FilterMode.Point)
                     throw new System.InvalidOperationException("픽셀 쓰레기 이미지의 Point 필터 설정이 적용되지 않았습니다.");
+            for (int i = 0; i < recycle.Length; i++)
+                if (recycle[i] == null || recycle[i].filterMode != FilterMode.Point)
+                    throw new System.InvalidOperationException("분리수거 그림의 Point 필터 설정이 적용되지 않았습니다.");
 
-            var samples = new[]
+            ValidateRecyclingArtMatchesBin();
+        }
+
+        /// <summary>
+        /// 땅에서 나오는 모든 쓰레기가 '자기 칸의 그림'을 받는지 확인한다.
+        /// 플레이어는 카드 그림만 보고 2초 안에 칸을 골라야 하므로,
+        /// 그림과 칸이 한 건이라도 어긋나면 분류가 불공정해진다.
+        /// </summary>
+        static void ValidateRecyclingArtMatchesBin()
+        {
+            // 그림 파일 이름 앞머리가 그 칸의 표식이다 (can_ / pet_ / paper_ / plastic_ / foil_).
+            string[] prefixes = { null, "can_", "pet_", "paper_", "plastic_", "foil_" };
+
+            var seen = new HashSet<string>();
+            int checkedCount = 0;
+
+            foreach (var item in LootTable.AllEntries())
             {
-                new LootItem("소주병", 1, Color.white, 1, MaterialKind.Glass),
-                new LootItem("찌그러진 캔", 1, Color.white, 1, MaterialKind.Metal),
-                new LootItem("녹슨 자전거", 1, Color.white, 3, MaterialKind.Metal),
-                new LootItem("의료 폐기물", 1, Color.white, 2, MaterialKind.Hazard),
-                new LootItem("장난감 상자", 1, Color.white, 2, MaterialKind.Plastic),
-                new LootItem("고장난 라디오", 1, Color.white, 2, MaterialKind.Electronics),
-                new LootItem("브라운관 TV", 1, Color.white, 4, MaterialKind.Electronics),
-                new LootItem("카세트테이프", 1, Color.white, 1, MaterialKind.Plastic),
-                new LootItem("휴대용 게임기", 1, Color.white, 1, MaterialKind.Electronics),
-                new LootItem("중고 스마트폰", 1, Color.white, 1, MaterialKind.Electronics),
-                new LootItem("폐배터리 액", 1, Color.white, 2, MaterialKind.Hazard),
-                new LootItem("금도금 시계", 1, Color.white, 1, MaterialKind.Relic)
-            };
-            var distinct = new HashSet<Sprite>();
-            for (int i = 0; i < samples.Length; i++)
-            {
-                Sprite sprite = TrashSpriteCatalog.For(samples[i]);
+                int category = (int)item.Category;
+                if (category <= 0 || category >= prefixes.Length)
+                    throw new System.InvalidOperationException(
+                        $"'{item.Name}' 에 분리수거 칸이 없습니다. 자동으로 넘어가는 품목은 둘 수 없습니다.");
+
+                Sprite sprite = TrashSpriteCatalog.For(item);
                 if (sprite == null)
-                    throw new System.InvalidOperationException($"부피 {samples[i].Volume} 쓰레기 스프라이트를 만들지 못했습니다.");
-                distinct.Add(sprite);
-            }
-            if (distinct.Count < 10)
-                throw new System.InvalidOperationException($"대표 쓰레기 12종이 {distinct.Count}개의 실루엣만 사용합니다.");
+                    throw new System.InvalidOperationException($"'{item.Name}' 의 그림을 만들지 못했습니다.");
 
-            Debug.Log($"[DigGame] 다양한 CC0 픽셀 쓰레기 이미지 29개 · 대표 12종 중 서로 다른 실루엣 {distinct.Count}개 검증 완료");
+                if (!sprite.name.StartsWith(prefixes[category], System.StringComparison.Ordinal))
+                    throw new System.InvalidOperationException(
+                        $"'{item.Name}' 은(는) {(RecyclingCategory)category} 칸인데 그림이 '{sprite.name}' 입니다.");
+
+                seen.Add(sprite.name);
+                checkedCount++;
+            }
+
+            if (seen.Count != 15)
+                throw new System.InvalidOperationException($"분리수거 그림 15장 중 {seen.Count}장만 쓰이고 있습니다.");
+
+            Debug.Log($"[DigGame] 쓰레기 {checkedCount}종이 모두 자기 분리수거 칸의 그림을 사용합니다 (그림 {seen.Count}장 전부 사용).");
         }
 
         static void ValidateEnvironmentAssets(Transform preview)
