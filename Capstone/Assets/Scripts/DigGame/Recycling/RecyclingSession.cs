@@ -72,6 +72,7 @@ namespace DigGame
         readonly float _duration;
         readonly float _answerDuration;
         readonly int _penalty;
+        readonly int _recovery;
         float _elapsed;
         float _answerElapsed;
         public RecyclingQueue Queue { get; }
@@ -85,7 +86,7 @@ namespace DigGame
         public event Action<RecyclingRoundResult> Resolved;
 
         public RecyclingSession(RecyclingQueue queue, PollutionMeter pollution, IRecyclingRewardSink rewards,
-            float duration = .45f, int penalty = 1, float answerDuration = 2f)
+            float duration = .45f, int penalty = 2, float answerDuration = 2f, int recovery = 1)
         {
             Queue = queue ?? throw new ArgumentNullException(nameof(queue));
             Pollution = pollution ?? throw new ArgumentNullException(nameof(pollution));
@@ -93,6 +94,7 @@ namespace DigGame
             _duration = Math.Max(.01f, duration);
             _answerDuration = Math.Max(.1f, answerDuration);
             _penalty = Math.Max(0, penalty);
+            _recovery = Math.Max(0, recovery);
         }
         public bool Open()
         {
@@ -141,7 +143,7 @@ namespace DigGame
             var item = Queue.RemoveFirst();
             int reward = correct ? _rewards.Pay(item) : 0;
             int before = Pollution.Value;
-            Pollution.Add(correct ? -1 : _penalty);
+            Pollution.Add(correct ? -_recovery : _penalty);
             LastResult = new RecyclingRoundResult(item, correct, reward, Pollution.Value - before, timedOut);
             Resolved?.Invoke(LastResult);
         }

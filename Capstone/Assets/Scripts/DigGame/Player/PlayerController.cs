@@ -48,6 +48,7 @@ namespace DigGame
         GameManager _game;
         WorldGrid _grid;
         SpriteRenderer _sr;
+        PlayerToolVisual _tool;
 
         float _digAccum;
         float _digNeeded;
@@ -87,9 +88,14 @@ namespace DigGame
         }
 
         public int BagCapacity => Stats.BagVolume + Gear.BagBonus;
-        public bool InventoryFull => InventoryVolume >= BagCapacity;
+        public int InventoryUsedSlots => Inventory.Count + (_game?.Relics?.CarriedCount ?? 0);
+        public bool InventorySlotsFull => InventoryUsedSlots >= GameConfig.InventorySlotCapacity;
+        public bool InventoryFull => InventorySlotsFull || InventoryVolume >= BagCapacity;
+        public Sprite CurrentSprite => _sr != null ? _sr.sprite : null;
+        public bool CurrentSpriteFlipX => _sr != null && _sr.flipX;
 
-        bool CanCarry(LootItem item) => InventoryVolume + EffectiveVolume(item) <= BagCapacity;
+        bool CanCarry(LootItem item) => !InventorySlotsFull &&
+            InventoryVolume + EffectiveVolume(item) <= BagCapacity;
 
         int EffectiveVolume(LootItem item) =>
             Gear.HasCompressor ? Mathf.Max(1, Mathf.CeilToInt(item.Volume * GameConfig.CompressorFactor))
@@ -115,6 +121,7 @@ namespace DigGame
             _lastCell = Cell;
 
             _sr = ActorRenderer;
+            if (_tool == null) _tool = PlayerToolVisual.Attach(transform);
             var walkFrames = PlayerSpriteCatalog.Frames(PlayerVisualState.Walk, Facing.Down);
             _sr.sprite = walkFrames.Length > 0
                 ? walkFrames[0]
@@ -127,6 +134,13 @@ namespace DigGame
         {
             if (_game == null || !_game.IsRunning) return;
             float dt = Time.deltaTime;
+            if (_game.InputBlocked)
+            {
+                CancelDig();
+                _moveInput = Vector2.zero;
+                UpdateVisual(0f);
+                return;
+            }
             if (_game.Recycling != null && _game.Recycling.InputCaptured)
             {
                 CancelDig(); _moveInput = Vector2.zero;
@@ -272,16 +286,26 @@ namespace DigGame
                 _visualTime += dt;
             }
 
+            int frame = 0;
             Sprite[] frames = PlayerSpriteCatalog.Frames(_visualState, _facing);
             if (frames.Length > 0)
             {
                 bool active = IsDigging || _moveInput.sqrMagnitude > 0.01f;
                 float fps = _visualState == PlayerVisualState.Dig ? 11f : 8f;
-                int frame = active ? Mathf.FloorToInt(_visualTime * fps) % frames.Length : 0;
+                frame = active ? Mathf.FloorToInt(_visualTime * fps) % frames.Length : 0;
                 _sr.sprite = frames[frame];
             }
 
             _sr.flipX = PlayerSpriteCatalog.NeedsFlip(_facing);
+
+            // 손에 든 집게를 같은 프레임에 맞춘다. 강화 단계는 매 프레임 읽어
+            // 퀘스트로 집게가 바뀌는 순간 바로 외형이 따라간다.
+            if (_tool != null)
+            {
+                _tool.SetTier(_game != null && _game.PickaxeQuests != null
+                    ? _game.PickaxeQuests.PickaxeTier : 1);
+                _tool.Apply(_visualState, _facing, frame, _sr.flipX);
+            }
         }
 
         void MoveAxisX(float dx)
@@ -525,8 +549,9 @@ namespace DigGame
             DigFeature feature = _grid.DigFeatureAt(target.x, target.y);
             float featureDurationMultiplier = DigFeatureInfo.DurationMultiplier(feature);
             float powerDurationMultiplier = TileInfo.PowerDigDurationMultiplier(kind, Stats.Power);
-            // 오염도 한 칸마다 최종 굴착 시간이 100%씩 늘어난다 (10칸이면 11배).
-            float pollutionDurationMultiplier = 1f + _game.PollutionLevel;
+            // 오염도 한 칸마다 최종 굴착 시간이 20%씩 늘어난다 (10칸이면 3배).
+            float pollutionDurationMultiplier = 1f
+                + _game.PollutionLevel * GameConfig.PollutionDigSlowdownPerLevel;
             float durationMultiplier = featureDurationMultiplier * powerDurationMultiplier
                 * pollutionDurationMultiplier;
             if (DigTarget != target)
@@ -635,11 +660,11 @@ namespace DigGame
             }
         }
 
-        /// <summary>파낸 자리에 드러난 유물을 줍는다. 가방 부피와는 무관하게 등에 진다.</summary>
+        /// <summary>파낸 자리에 드러난 유물을 줍는다. 부피는 없지만 공용 인벤토리 한 칸을 쓴다.</summary>
         void PickUpRelicsNearby(Vector3 p)
         {
             var relics = _game.Relics;
-            if (relics == null || relics.CarryFull) return;
+            if (relics == null) return;
 
             for (int dy = -1; dy <= 1; dy++)
             {
@@ -657,7 +682,7 @@ namespace DigGame
                     if (!_grid.TryPeekRelic(x, y, out int peek)) continue;
                     if (!relics.CanAccept(peek))
                     {
-                        SetBlocked($"유물을 더 들 수 없다 ({GameConfig.RelicCarryLimit}개) — 복원소에 맡기자");
+                        SetBlocked($"인벤토리가 가득 찼다 ({InventoryUsedSlots}/{GameConfig.InventorySlotCapacity}) — 복원소나 분리수거장을 이용하자");
                         return;
                     }
                     if (_grid.TryTakeRelic(x, y, out int relicId))
@@ -681,7 +706,9 @@ namespace DigGame
                 {
                     _cantCarryCell = c;
                     _cantCarryTimer = Time.time + 2.5f;
-                    SetBlocked($"'{peek.Name}'(부피 {EffectiveVolume(peek)})이 가방에 안 들어간다");
+                    SetBlocked(InventorySlotsFull
+                        ? $"인벤토리 {GameConfig.InventorySlotCapacity}칸이 가득 찼다"
+                        : $"'{peek.Name}'(부피 {EffectiveVolume(peek)})이 가방에 안 들어간다");
                 }
                 return;
             }
@@ -744,7 +771,7 @@ namespace DigGame
         /// <summary>지하 보관함에서 꺼낸 아이템을 현재 부피 그대로 가방에 넣는다.</summary>
         public bool TryReceiveStoredItem(LootItem item)
         {
-            if (InventoryVolume + item.Volume > BagCapacity) return false;
+            if (InventorySlotsFull || InventoryVolume + item.Volume > BagCapacity) return false;
             Inventory.Add(item);
             return true;
         }

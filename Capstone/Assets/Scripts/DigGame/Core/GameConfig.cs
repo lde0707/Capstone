@@ -52,6 +52,10 @@ namespace DigGame
         public const int BasePower = 1;
         /// <summary>가방 기본 용량 (부피 단위).</summary>
         public const int BaseBagVolume = 12;
+        /// <summary>하단 1줄을 포함한 인벤토리 전체 규격.</summary>
+        public const int InventoryColumns = 9;
+        public const int InventoryRows = 4;
+        public const int InventorySlotCapacity = InventoryColumns * InventoryRows;
 
         // ---------- 기력 (지상에서만 회복) ----------
         public const float StaminaTickInterval = 0.1f;
@@ -170,7 +174,13 @@ namespace DigGame
         public const float MoleScanRadius = 12f;
         public const int TurtleBagBonus = 6;
 
-        // ---------- 분리수거장 ----------
+        // ---------- 오염 / 분리수거 ----------
+        /// <summary>오염도 한 칸당 추가되는 굴착 시간. 0.2 = 20% 느려짐.</summary>
+        public const float PollutionDigSlowdownPerLevel = 0.20f;
+        public const int RecyclingSuccessPollutionRecovery = 1;
+        /// <summary>실패 오염량은 성공 회복량의 정확히 두 배.</summary>
+        public const int RecyclingFailurePollution = RecyclingSuccessPollutionRecovery * 2;
+
         // ---------- 시대 진행 (날짜별) ----------
         /// <summary>1일차부터 7일차까지의 목표 시대. 원시 2일 + 미래 2일.</summary>
         static readonly int[] EraByDay = { 0, 0, 1, 2, 3, 4, 4 };
@@ -231,7 +241,8 @@ namespace DigGame
         public static readonly int[] PickaxeQuestRelicCounts = { 7, 8, 10, 7 };
         public const float PickaxeQuestInteractRange = 2.2f;
         /// <summary>한 번에 들고 다닐 수 있는 유물 수 (가방 부피와 별개).</summary>
-        public const int RelicCarryLimit = 8;
+        /// <summary>유물도 공용 인벤토리 슬롯을 사용한다.</summary>
+        public const int RelicCarryLimit = InventorySlotCapacity;
         /// <summary>복원 1건에 걸리는 시간 (초). 낮 2분 기준으로 하루 여러 개가 나온다.</summary>
         public const float RelicRestoreSeconds = 12f;
         /// <summary>복원 비용 — 층이 깊을수록 비싸다 (깊이별 가치의 이 비율).</summary>

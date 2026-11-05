@@ -69,12 +69,19 @@ namespace DigGame
                     if (!moving) GUI.Label(new Rect(650,180,170,35), "다음 물건", _label);
                 }
                 if (moving && session.Queue.TryPeek(1,out var later)) Card(next,later,t,new Color(.27f,.4f,.5f));
-                string message = moving ? (session.LastResult.Specialist ? $"전문 처리 완료  +{session.LastResult.Reward:N0}원" :
+                string pollutionChange = session.LastResult.PollutionDelta > 0
+                    ? $"오염도 +{session.LastResult.PollutionDelta}칸"
+                    : session.LastResult.PollutionDelta < 0
+                        ? $"오염도 {-session.LastResult.PollutionDelta}칸 회복"
+                        : "오염도 변화 없음";
+                string message = moving ? (session.LastResult.Specialist
+                    ? $"전문 처리 완료  +{session.LastResult.Reward:N0}원" +
+                        (session.LastResult.PollutionDelta < 0 ? $" · {pollutionChange}" : "") :
                     session.LastResult.Correct
-                        ? $"정확한 분류!  +{session.LastResult.Reward:N0}원" + (session.LastResult.PollutionDelta < 0 ? " · 오염도 1칸 회복" : "")
+                        ? $"정확한 분류!  +{session.LastResult.Reward:N0}원 · {pollutionChange}"
                         : session.LastResult.TimedOut
-                            ? "시간 초과! · 보상 없이 폐기 / 오염도 +1칸"
-                            : "분류 실패 · 보상 없이 폐기 / 오염도 +1칸") : "2초 안에 알맞은 분류 키를 누르세요";
+                            ? $"시간 초과! · 보상 없이 폐기 / {pollutionChange}"
+                            : $"분류 실패 · 보상 없이 폐기 / {pollutionChange}") : "2초 안에 알맞은 분류 키를 누르세요";
                 GUI.Label(new Rect(50,485,900,45),message,_label);
                 GUI.enabled = !moving;
                 for (int i=0;i<5;i++)
@@ -98,12 +105,12 @@ namespace DigGame
             Sprite sprite=TrashSpriteCatalog.For(item);
             if (sprite!=null)
             {
-                Rect pixels=sprite.rect; float fit=Mathf.Min((rect.width-32)/pixels.width,(rect.height-70)/pixels.height);
-                var image=new Rect(rect.center.x-pixels.width*fit/2,rect.y+18,pixels.width*fit,pixels.height*fit);
+                Rect pixels=sprite.rect; float fit=Mathf.Min((rect.width-64)/pixels.width,(rect.height-118)/pixels.height);
+                var image=new Rect(rect.center.x-pixels.width*fit/2,rect.y+34,pixels.width*fit,pixels.height*fit);
                 GUI.DrawTextureWithTexCoords(image,sprite.texture,new Rect(pixels.x/sprite.texture.width,pixels.y/sprite.texture.height,pixels.width/sprite.texture.width,pixels.height/sprite.texture.height));
             }
             _cardLabel.fontSize=rect.width<200 ? 15 : 21;
-            GUI.Label(new Rect(rect.x+8,rect.yMax-55,rect.width-16,50),item.Name,_cardLabel);
+            GUI.Label(new Rect(rect.x+28,rect.yMax-68,rect.width-56,42),item.Name,_cardLabel);
             GUI.color=old;
         }
         void DrawBar(Rect rect, float amount, Color fill)

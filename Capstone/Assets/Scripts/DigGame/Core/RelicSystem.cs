@@ -5,7 +5,7 @@ namespace DigGame
 {
     /// <summary>
     /// 유물 수집 흐름을 관리한다.
-    ///   땅속에서 발굴 → 가방과 별개로 등에 진다 → 지상 복원소에 E 로 투입
+    ///   땅속에서 발굴 → 공용 인벤토리에 보관 → 지상 복원소에 E 로 투입
     ///   → 차례로 복원(시간) → 마을에 전시되거나 살아나서 돌아다닌다.
     /// 같은 유물을 또 캐면 복원하지 않고 자동으로 돈으로 바꾼다.
     /// </summary>
@@ -27,7 +27,10 @@ namespace DigGame
         bool[] _restored;   // 복원까지 마쳤는가
 
         public int CarriedCount => _carried.Count;
-        public bool CarryFull => _carried.Count >= GameConfig.RelicCarryLimit;
+        public IReadOnlyList<int> Carried => _carried;
+        public bool CarryFull => _game?.Player != null
+            ? _game.Player.InventorySlotsFull
+            : _carried.Count >= GameConfig.InventorySlotCapacity;
 
         /// <summary>복원 대기열 (앞에서부터 처리된다).</summary>
         public IReadOnlyList<Job> Queue => _queue;
@@ -120,13 +123,15 @@ namespace DigGame
 
             if (CarryFull)
             {
-                _game.Log($"유물을 더 들 수 없다 ({GameConfig.RelicCarryLimit}개) — 복원소에 먼저 맡기자");
+                int used = _game.Player != null ? _game.Player.InventoryUsedSlots : _carried.Count;
+                _game.Log($"인벤토리가 가득 찼다 ({used}/{GameConfig.InventorySlotCapacity}) — 복원소나 분리수거장을 이용하자");
                 return;
             }
 
             _carried.Add(relicId);
+            int usedAfterPickup = _game.Player != null ? _game.Player.InventoryUsedSlots : _carried.Count;
             _game.Log($"■ 유물 발굴! <b>{def.Name}</b> ({def.Depth}층 · {def.GroupName}) " +
-                $"— 복원소에 E 로 맡기면 마을에 나타난다 [{_carried.Count}/{GameConfig.RelicCarryLimit}]");
+                $"— 복원소에 E 로 맡기면 마을에 나타난다 [인벤토리 {usedAfterPickup}/{GameConfig.InventorySlotCapacity}]");
         }
 
         /// <summary>복원소에 등에 진 유물을 전부 맡긴다.</summary>
@@ -158,7 +163,7 @@ namespace DigGame
             else
                 _game.Log($"복원소에 유물 {accepted}개 투입 (비용 {cost:N0}원) — " +
                     $"한 개당 {RestoreSeconds:0}초 뒤에 마을에 나타난다" +
-                    (_carried.Count > 0 ? $" · {_carried.Count}개는 돈이 모자라 그대로 지고 있다" : ""));
+                    (_carried.Count > 0 ? $" · {_carried.Count}개는 돈이 모자라 인벤토리에 남아 있다" : ""));
             return accepted;
         }
 
@@ -169,7 +174,7 @@ namespace DigGame
         public bool CanDepositNow =>
             _carried.Count > 0 && _game != null && _game.Money >= CheapestRestoreCost;
 
-        /// <summary>지금 지고 있는 것 중 가장 싼 복원 비용.</summary>
+        /// <summary>현재 인벤토리 유물 중 가장 싼 복원 비용.</summary>
         public int CheapestRestoreCost
         {
             get
@@ -197,7 +202,7 @@ namespace DigGame
         public static int RestoreCost(RelicDef def) =>
             Mathf.RoundToInt(def.DuplicateValue * GameConfig.RelicRestoreCostRate / 10f) * 10;
 
-        /// <summary>지금 등에 진 유물을 전부 맡기는 데 드는 돈.</summary>
+        /// <summary>현재 인벤토리 유물을 전부 맡기는 데 드는 돈.</summary>
         public int CarriedRestoreCost
         {
             get

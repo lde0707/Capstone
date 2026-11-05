@@ -68,6 +68,7 @@ namespace DigGame
 
         public bool ShopOpen { get; private set; }              // 낮의 간이 강화 상점
         public bool IsRunning => State == GameState.Day;
+        public bool InputBlocked => Hud != null && Hud.BlocksGameplayInput;
         public int PollutionLevel => Recycling?.Session?.Pollution.Value ?? 0;
         public int PollutionSlowdownPercent => PollutionLevel * 100;
         /// <summary>오늘의 단계를 전부 넘겼는가.</summary>
@@ -228,6 +229,7 @@ namespace DigGame
             // 초기화되지 않은 인스턴스는 아무 것도 하지 않는다.
             // (StartGame 이 실패했거나 씬에 수동 배치된 경우 EndDay 가 폭주하는 것을 막는다)
             if (!Initialized) return;
+            if (InputBlocked) return;
 
             var kb = Keyboard.current;
 
@@ -274,7 +276,8 @@ namespace DigGame
                 }
 
                 if (Recycling != null && Recycling.InputCaptured) return;
-                if (kb.eKey.wasPressedThisFrame) HandleInteract();
+                if (kb.eKey.wasPressedThisFrame && !HandleInteract())
+                    Hud?.OpenInventory();
                 if (kb.escapeKey.wasPressedThisFrame && ShopOpen) ShopOpen = false;
 
                 if (!ShopOpen)
@@ -513,43 +516,43 @@ namespace DigGame
         /// 그래서 "지금 할 일이 있는" 시설이 먼저 가져가고, 아무 일도 없으면 다음으로 넘긴다.
         /// (쓰레기를 들고 강화소 앞에 서 있다고 상점이 안 열리면 안 된다)
         /// </summary>
-        void HandleInteract()
+        bool HandleInteract()
         {
             // 상점이 열려 있으면 E 는 언제나 '닫기'다.
-            if (ShopOpen) { ShopOpen = false; return; }
+            if (ShopOpen) { ShopOpen = false; return true; }
 
             bool nearRestorer = PlayerNearRestorer();
             bool nearRecycle = PlayerNearRecycle();
             bool nearShop = PlayerNearBuilding();
 
             // 입구 근처 퀘스트 주민은 시설보다 먼저 상호작용한다.
-            if (PickaxeQuests != null && PickaxeQuests.TryInteract()) return;
+            if (PickaxeQuests != null && PickaxeQuests.TryInteract()) return true;
 
             // 1) 할 일이 있는 시설 순서대로
             // 돈이 모자라 한 개도 못 맡기면 E 를 붙잡지 않는다 (강화소가 열려야 돈을 번다).
             if (nearRestorer && Relics != null && Relics.CanDepositNow)
             {
                 Relics.DepositAll();
-                return;
+                return true;
             }
             if (nearRecycle && Player.Inventory.Count > 0)
             {
                 Recycling.Deposit();
-                return;
+                return true;
             }
 
             var mine = Player.MineHere();
             if (mine != null)
             {
                 InteractMine(mine);
-                return;
+                return true;
             }
 
             // 2) 강화소는 언제나 열 수 있다
             if (nearShop)
             {
                 ShopOpen = true;
-                return;
+                return true;
             }
 
             // 3) 할 일이 없을 때의 안내
@@ -560,15 +563,16 @@ namespace DigGame
                         ? $"복원소가 이미 유물 {Relics.QueueCount}개를 되살리는 중이다"
                         : "복원소에 맡길 유물이 없다 — 땅속에 비치는 유물 이미지를 찾아보자")
                     : $"복원 비용이 모자라다 (가장 싼 것 {Relics.CheapestRestoreCost:N0}원 / 보유 {Money:N0}원)");
-                return;
+                return true;
             }
             if (nearRecycle)
             {
                 Recycling.Deposit();
-                return;
+                return true;
             }
 
-            Log("시설 앞으로 가서 E 를 눌러야 한다 (투입소 · 강화소 · 복원소)");
+            // 주변에 E 상호작용 대상이 없을 때는 GameHUD가 인벤토리를 연다.
+            return false;
         }
 
         void InteractMine(MineSite mine)

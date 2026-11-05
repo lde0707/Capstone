@@ -21,8 +21,9 @@ namespace DigGame
         {
             Game = game;
             Session = new RecyclingSession(new RecyclingQueue(), new PollutionMeter(),
-                new GameRecyclingRewardSink(game), _settings.TransitionSeconds,
-                _settings.MistakePollution, _settings.AnswerSeconds);
+                new GameRecyclingRewardSink(game), duration: _settings.TransitionSeconds,
+                penalty: _settings.MistakePollution, answerDuration: _settings.AnswerSeconds,
+                recovery: _settings.SuccessPollutionRecovery);
             Session.Resolved += OnResolved;
             Session.Pollution.Changed += OnPollutionChanged;
             _view = new LazyPrefabInstance<RecyclingMinigameUI>(_viewPrefab, transform, view => view.Bind(this));
@@ -32,10 +33,16 @@ namespace DigGame
         {
             _feedback.Play(result);
             if (!result.Correct)
+            {
+                string change = result.PollutionDelta > 0
+                    ? $"+{result.PollutionDelta}칸"
+                    : "최대치 유지";
                 Game.Log((result.TimedOut ? "분류 시간 초과" : "분류 실패") +
-                    $" — 오염도 +1칸 (현재 {Session.Pollution.Value}/{PollutionMeter.MaxValue})");
+                    $" — 오염도 {change} (현재 {Session.Pollution.Value}/{PollutionMeter.MaxValue})");
+            }
             else if (result.PollutionDelta < 0)
-                Game.Log($"정상 분리수거 — 오염도 1칸 회복 (현재 {Session.Pollution.Value}/{PollutionMeter.MaxValue})");
+                Game.Log($"정상 분리수거 — 오염도 {-result.PollutionDelta}칸 회복 " +
+                    $"(현재 {Session.Pollution.Value}/{PollutionMeter.MaxValue})");
         }
         void OnPollutionChanged(int value) => Game?.View?.SetPollutionLevel(value);
         public bool Deposit()
@@ -81,6 +88,7 @@ namespace DigGame
         void Update()
         {
             if (Session == null) return;
+            if (!IsOpen && Game != null && Game.InputBlocked) return;
             var kb = Keyboard.current;
             if (!IsOpen)
             {

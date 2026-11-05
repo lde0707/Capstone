@@ -7,47 +7,87 @@ namespace DigGame
     /// <summary>쓰집소 픽셀 스킨을 사용하는 IMGUI HUD.</summary>
     public class GameHUD : MonoBehaviour
     {
+        enum MenuPage { None, Pause, Settings, Controls, Title }
+
         const float MarginX = 28f;
         const float MarginY = 26f;
         /// <summary>우측 상단 패널 높이. 아래에 붙는 패널들이 이 값을 기준으로 내려간다.</summary>
-        const float TopRightHeight = 178f;
-        const float PanelW = 268f;
+        const float TopRightHeight = 232f;
+        const float PanelW = 330f;
         /// <summary>이 거리 안에 들어온 복원 유물은 머리 위에 이름이 뜬다.</summary>
         const float RelicLabelRange = 4f;          // 칸
         /// <summary>세로 거리는 덜 친다 — 머리 위를 떠다니는 공중형도 잡히게.</summary>
         const float RelicLabelVerticalWeight = 0.6f;
         /// <summary>한 번에 띄울 이름표 수. 넘치면 가까운 것부터.</summary>
         const int RelicLabelMax = 4;
-        const int HotbarSlotCount = 9;
+        const int HotbarSlotCount = GameConfig.InventoryColumns;
         const float HotbarSlotSize = 56f;
-        const float HotbarSlotGap = 4f;
+        public const float TitleReferenceWidth = 1920f;
+        public const float TitleReferenceHeight = 1080f;
 
         GameManager _game;
         Font _font;
         public Font UIFont => _font;
         PixelUISkin _skin;
         public PixelUISkin UISkin => _skin;
-        GUIStyle _label, _small, _micro, _title, _big, _center, _button, _buttonSmall, _tab, _tabOn;
+        GUIStyle _label, _small, _micro, _title, _big, _center, _logo, _logoShadow, _button, _buttonSmall, _tab, _tabOn;
+        GUIStyle _titleSubtitle, _titleTagline, _titleButton, _titleFooter;
         GUIStyle _nameplate;
         GUIStyle _questBubbleText, _questBang, _fullBubbleText;
         Texture2D _white;
-        bool _showHelp = true;
+        Texture2D _titleScene;
+        bool _showHelp;
         bool _stylesReady;
         int _nightTab;   // 0 능력치 / 1 장비 / 2 펫 / 3 시설
         bool _showCodex;
+        bool _showInventory;
         int _codexTab;   // 유물 도감 분류 탭
+        MenuPage _menu = MenuPage.Title;
+        MenuPage _returnMenu = MenuPage.Title;
+        bool _hasEnteredGame;
+        bool _soundEnabled = true;
+
+        public bool BlocksGameplayInput => _menu != MenuPage.None || _showInventory;
+        public bool TitleScreenOpen => _menu == MenuPage.Title;
+        public bool InventoryOpen => _showInventory;
+
+        /// <summary>주변에 E 상호작용 대상이 없을 때 GameManager가 호출한다.</summary>
+        public void OpenInventory() => SetInventory(true);
 
         public void Init(GameManager game)
         {
             _game = game;
             if (game != null) game.Hud = this;
+            SetMenu(MenuPage.Title);
         }
 
-        /// <summary>픽셀 동굴 프레임 패널. 스킨 누락 시 단색 배경으로 대체한다.</summary>
+        /// <summary>HUD용 얇은 픽셀 프레임. 스킨 누락 시 단색 배경으로 대체한다.</summary>
         void Panel(Rect r, Color c)
         {
-            if (_skin != null) _skin.DrawPanel(r, c.a);
-            else Fill(r, c);
+            if (_skin != null)
+            {
+                _skin.DrawHudPanel(r, c.a);
+                return;
+            }
+
+            Color body = new Color(
+                Mathf.Clamp01(0.04f + c.r * 0.18f),
+                Mathf.Clamp01(0.035f + c.g * 0.18f),
+                Mathf.Clamp01(0.07f + c.b * 0.18f),
+                Mathf.Max(0.82f, c.a));
+            Fill(r, body);
+            Outline(r, new Color(0.72f, 0.56f, 0.24f, 0.82f), 2f);
+        }
+
+        /// <summary>타이틀과 ESC 메뉴에만 쓰는 얇은 금색 모서리 프레임.</summary>
+        void MenuPanel(Rect r, Color c)
+        {
+            if (_skin != null)
+            {
+                _skin.DrawPanel(r, c.a);
+                return;
+            }
+            Panel(r, c);
         }
 
         void Awake()
@@ -57,11 +97,21 @@ namespace DigGame
             _white.Apply();
             _skin = PixelUISkin.Load();
             _font = _skin != null && _skin.Font != null ? _skin.Font : LoadKoreanFont();
+            _titleScene = Resources.Load<Texture2D>("PixelUI/title_scene_background");
+            if (_titleScene != null)
+            {
+                _titleScene.filterMode = FilterMode.Point;
+                _titleScene.wrapMode = TextureWrapMode.Clamp;
+                _titleScene.anisoLevel = 0;
+            }
+            _soundEnabled = AudioListener.volume > 0.01f;
         }
 
         void OnDestroy()
         {
             DestroyTexture(_white);
+            if (Application.isPlaying && GameManager.Instance == _game)
+                Time.timeScale = 1f;
         }
 
         static void DestroyTexture(Texture2D texture)
@@ -110,9 +160,85 @@ namespace DigGame
             { _showCodex = false; return; }
             var kb = Keyboard.current;
             if (kb == null) return;
+
+            if (kb.escapeKey.wasPressedThisFrame)
+            {
+                HandleEscape();
+                return;
+            }
+
+            if (_menu != MenuPage.None) return;
+            if (kb.iKey.wasPressedThisFrame)
+            {
+                SetInventory(!_showInventory);
+                return;
+            }
+            if (_showInventory) return;
             if (kb.tabKey.wasPressedThisFrame) _showHelp = !_showHelp;
             if (kb.cKey.wasPressedThisFrame) _showCodex = !_showCodex;
-            if (kb.escapeKey.wasPressedThisFrame) _showCodex = false;
+        }
+
+        void HandleEscape()
+        {
+            if (_showInventory)
+            {
+                SetInventory(false);
+                return;
+            }
+            if (_menu == MenuPage.Settings || _menu == MenuPage.Controls)
+            {
+                SetMenu(_returnMenu);
+                return;
+            }
+            if (_menu == MenuPage.Pause)
+            {
+                SetMenu(MenuPage.None);
+                return;
+            }
+            if (_menu == MenuPage.Title) return;
+
+            if (_showCodex)
+            {
+                _showCodex = false;
+                return;
+            }
+
+            _game?.CloseShop();
+            SetMenu(MenuPage.Pause);
+        }
+
+        void SetMenu(MenuPage page)
+        {
+            _menu = page;
+            bool pause = page != MenuPage.None;
+            if (pause)
+            {
+                _showInventory = false;
+                _showCodex = false;
+                _showHelp = false;
+                _game?.CloseShop();
+            }
+            if (Application.isPlaying) Time.timeScale = pause ? 0f : 1f;
+        }
+
+        void SetInventory(bool open)
+        {
+            if (_menu != MenuPage.None && open) return;
+            _showInventory = open;
+            if (open)
+            {
+                _showCodex = false;
+                _showHelp = false;
+                _game?.CloseShop();
+            }
+            if (Application.isPlaying)
+                Time.timeScale = open ? 0f : 1f;
+        }
+
+        void OpenSubMenu(MenuPage page)
+        {
+            _returnMenu = _menu == MenuPage.Title ? MenuPage.Title : MenuPage.Pause;
+            SetMenu(page);
         }
 
         void EnsureStyles()
@@ -135,12 +261,46 @@ namespace DigGame
             {
                 fontSize = 26, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true
             };
+            _logo = new GUIStyle(_center)
+            {
+                fontSize = 72,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            _logoShadow = new GUIStyle(_logo);
             GUIStyle buttonBase = _skin != null ? _skin.ButtonStyle : GUI.skin.button;
             GUIStyle selectedButtonBase = _skin != null ? _skin.HighlightButtonStyle : GUI.skin.button;
             _button = new GUIStyle(buttonBase) { fontSize = 15, richText = true };
             _buttonSmall = new GUIStyle(buttonBase) { fontSize = 13, richText = true };
             _tab = new GUIStyle(buttonBase) { fontSize = 14, richText = true };
             _tabOn = new GUIStyle(selectedButtonBase) { fontSize = 14, fontStyle = FontStyle.Bold, richText = true };
+            _titleSubtitle = new GUIStyle(_center)
+            {
+                fontSize = 30,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            _titleTagline = new GUIStyle(_center)
+            {
+                fontSize = 24,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            _titleButton = new GUIStyle(buttonBase)
+            {
+                fontSize = 22,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            _titleFooter = new GUIStyle(_small)
+            {
+                fontSize = 18,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
             _nameplate = new GUIStyle(GUI.skin.label)
             {
                 fontSize = 14,
@@ -175,9 +335,11 @@ namespace DigGame
             if (_font != null)
             {
                 _label.font = _font; _small.font = _font; _micro.font = _font; _title.font = _font;
-                _big.font = _font; _center.font = _font;
+                _big.font = _font; _center.font = _font; _logo.font = _font; _logoShadow.font = _font;
                 _button.font = _font; _buttonSmall.font = _font;
                 _tab.font = _font; _tabOn.font = _font;
+                _titleSubtitle.font = _font; _titleTagline.font = _font;
+                _titleButton.font = _font; _titleFooter.font = _font;
                 _nameplate.font = _font;
                 _questBubbleText.font = _font;
                 _questBang.font = _font;
@@ -191,9 +353,14 @@ namespace DigGame
             _title.normal.textColor = c;
             _big.normal.textColor = c;
             _center.normal.textColor = c;
+            _logo.normal.textColor = new Color32(248, 215, 118, 255);
+            _logoShadow.normal.textColor = new Color(0.025f, 0.018f, 0.045f, 0.96f);
+            _titleSubtitle.normal.textColor = new Color32(203, 188, 240, 255);
+            _titleTagline.normal.textColor = new Color32(242, 233, 214, 255);
+            _titleFooter.normal.textColor = new Color32(205, 199, 218, 255);
             _nameplate.normal.textColor = new Color(1f, 0.97f, 0.9f);
             _questBubbleText.normal.textColor = new Color32(48, 38, 57, 255);
-            _questBang.normal.textColor = Color.white;
+            _questBang.normal.textColor = new Color32(117, 55, 168, 255);
             _fullBubbleText.normal.textColor = new Color32(74, 42, 37, 255);
         }
 
@@ -202,6 +369,17 @@ namespace DigGame
             if (_game == null || _game.Grid == null) return;
             if (_game.Recycling != null && _game.Recycling.InputCaptured) return;
             EnsureStyles();
+
+            if (_menu == MenuPage.Title)
+            {
+                DrawTitleScreen();
+                return;
+            }
+
+            bool menuOpen = _menu != MenuPage.None;
+            bool modalOpen = menuOpen || _showInventory;
+            bool enabled = GUI.enabled;
+            if (modalOpen) GUI.enabled = false;
 
             switch (_game.State)
             {
@@ -213,22 +391,439 @@ namespace DigGame
                     DrawTopRight();
                     DrawContext();
                     DrawLogPanel();
-                    if (_showHelp) DrawHelpPanel();
+                    if (_showHelp && !modalOpen) DrawHelpPanel();
                     DrawRelicStatus();
-                    if (_game.ShopOpen) DrawDayShop();
+                    if (_game.ShopOpen && !modalOpen) DrawDayShop();
                     DrawInventoryHotbar();
-                    if (_showCodex) DrawCodex();
+                    if (_showCodex && !modalOpen) DrawCodex();
                     break;
 
                 case GameState.Night:
                     DrawNightScreen();
-                    if (_showCodex) DrawCodex();
+                    if (_showCodex && !modalOpen) DrawCodex();
                     break;
 
                 case GameState.Won:
                 case GameState.Lost:
                     DrawResultOverlay();
                     break;
+            }
+
+            GUI.enabled = enabled;
+            if (menuOpen) DrawMenuOverlay();
+            else if (_showInventory) DrawInventoryOverlay();
+        }
+
+        Rect PanelContent(Rect panel, float side = 28f, float top = 24f, float bottom = 22f) =>
+            new Rect(panel.x + side, panel.y + top,
+                Mathf.Max(1f, panel.width - side * 2f),
+                Mathf.Max(1f, panel.height - top - bottom));
+
+        Rect CenteredPanel(float width, float height) => new Rect(
+            (Screen.width - width) * 0.5f,
+            (Screen.height - height) * 0.5f,
+            width,
+            height);
+
+        void DrawMenuBackdrop()
+        {
+            Fill(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0.015f, 0.012f, 0.035f, 0.82f));
+        }
+
+        void DrawTitleScreen()
+        {
+            DrawTitleSceneBackground();
+            Matrix4x4 oldMatrix = GUI.matrix;
+            float scale = Mathf.Min(
+                Screen.width / TitleReferenceWidth,
+                Screen.height / TitleReferenceHeight);
+            scale = Mathf.Max(0.01f, scale);
+            float offsetX = (Screen.width - TitleReferenceWidth * scale) * 0.5f;
+            float offsetY = (Screen.height - TitleReferenceHeight * scale) * 0.5f;
+            GUI.matrix = Matrix4x4.TRS(
+                new Vector3(offsetX, offsetY, 0f),
+                Quaternion.identity,
+                new Vector3(scale, scale, 1f));
+
+            // PC 16:9 기준의 중앙 안전 영역. 울트라와이드와 16:10에서도 전부 화면 안에 남는다.
+            const float menuW = 720f;
+            const float menuX = (TitleReferenceWidth - menuW) * 0.5f;
+            Rect shade = new Rect(menuX - 46f, 38f, menuW + 92f, TitleReferenceHeight - 76f);
+            Fill(shade, new Color(0.012f, 0.009f, 0.027f, 0.32f));
+            Fill(new Rect(shade.x, shade.y, 2f, shade.height), new Color(0.45f, 0.35f, 0.62f, 0.28f));
+            Fill(new Rect(shade.xMax - 2f, shade.y, 2f, shade.height), new Color(0.45f, 0.35f, 0.62f, 0.28f));
+
+            const string titleText = "쓰레기 집게 소년";
+            Rect logoRect = new Rect(menuX, 92f, menuW, 112f);
+            GUIStyle fittedLogo = FittedTitleStyle(_logo, titleText, logoRect, 72, 48, 24f, 12f);
+            GUIStyle fittedShadow = new GUIStyle(_logoShadow) { fontSize = fittedLogo.fontSize };
+            GUI.Label(new Rect(logoRect.x + 4f, logoRect.y + 5f, logoRect.width, logoRect.height),
+                titleText, fittedShadow);
+            GUI.Label(logoRect, titleText, fittedLogo);
+            DrawFittedTitleLabel(new Rect(menuX, 207f, menuW, 48f), "쓰집소",
+                _titleSubtitle, 30, 22);
+            DrawFittedTitleLabel(new Rect(menuX, 266f, menuW, 44f),
+                "땅을 파고 · 쓰레기를 집고 · 마을을 되살려라",
+                _titleTagline, 24, 17);
+
+            const float buttonW = 420f;
+            const float buttonH = 62f;
+            const float buttonGap = 16f;
+            const float buttonX = (TitleReferenceWidth - buttonW) * 0.5f;
+            float y = 390f;
+            if (TitleButton(new Rect(buttonX, y, buttonW, buttonH),
+                    _hasEnteredGame ? "이어하기" : "게임 시작"))
+            {
+                _hasEnteredGame = true;
+                SetMenu(MenuPage.None);
+            }
+            y += buttonH + buttonGap;
+
+            if (_hasEnteredGame)
+            {
+                if (TitleButton(new Rect(buttonX, y, buttonW, buttonH), "새 게임"))
+                {
+                    if (Application.isPlaying) Time.timeScale = 1f;
+                    Bootstrap.Restart();
+                    GUI.matrix = oldMatrix;
+                    return;
+                }
+                y += buttonH + buttonGap;
+            }
+
+            if (TitleButton(new Rect(buttonX, y, buttonW, buttonH), "설정"))
+                OpenSubMenu(MenuPage.Settings);
+            y += buttonH + buttonGap;
+            if (TitleButton(new Rect(buttonX, y, buttonW, buttonH), "조작법"))
+                OpenSubMenu(MenuPage.Controls);
+
+            DrawFittedTitleLabel(new Rect(menuX - 40f, 990f, menuW + 80f, 36f),
+                "E / I 인벤토리 · ESC 메뉴 · TAB 간단 조작 안내",
+                _titleFooter, 18, 13);
+            GUI.matrix = oldMatrix;
+        }
+
+        GUIStyle FittedTitleStyle(GUIStyle source, string text, Rect rect,
+            int maxFontSize, int minFontSize, float horizontalPadding = 20f, float verticalPadding = 8f)
+        {
+            var style = new GUIStyle(source)
+            {
+                fontSize = maxFontSize,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            var content = new GUIContent(text);
+            float availableW = Mathf.Max(1f, rect.width - horizontalPadding);
+            float availableH = Mathf.Max(1f, rect.height - verticalPadding);
+            while (style.fontSize > minFontSize)
+            {
+                Vector2 measured = style.CalcSize(content);
+                if (measured.x <= availableW && measured.y <= availableH) break;
+                style.fontSize--;
+            }
+            return style;
+        }
+
+        void DrawFittedTitleLabel(Rect rect, string text, GUIStyle source,
+            int maxFontSize, int minFontSize)
+        {
+            GUI.Label(rect, text,
+                FittedTitleStyle(source, text, rect, maxFontSize, minFontSize));
+        }
+
+        bool TitleButton(Rect rect, string text)
+        {
+            GUIStyle style = FittedTitleStyle(
+                _titleButton, text, rect, 22, 15, 42f, 18f);
+            return GUI.Button(rect, text, style);
+        }
+
+        void DrawTitleSceneBackground()
+        {
+            var screen = new Rect(0f, 0f, Screen.width, Screen.height);
+            if (_titleScene == null)
+            {
+                DrawMenuBackdrop();
+                return;
+            }
+
+            float screenAspect = Mathf.Max(0.01f, screen.width / screen.height);
+            float textureAspect = _titleScene.width / (float)Mathf.Max(1, _titleScene.height);
+            Rect uv = new Rect(0f, 0f, 1f, 1f);
+            if (textureAspect > screenAspect)
+            {
+                float visible = screenAspect / textureAspect;
+                uv.x = (1f - visible) * 0.5f;
+                uv.width = visible;
+            }
+            else
+            {
+                float visible = textureAspect / screenAspect;
+                uv.y = (1f - visible) * 0.5f;
+                uv.height = visible;
+            }
+            GUI.DrawTextureWithTexCoords(screen, _titleScene, uv, true);
+            Fill(screen, new Color(0.025f, 0.015f, 0.05f, 0.18f));
+        }
+
+        void DrawMenuOverlay()
+        {
+            DrawMenuBackdrop();
+            switch (_menu)
+            {
+                case MenuPage.Pause: DrawPauseMenu(); break;
+                case MenuPage.Settings: DrawSettingsMenu(); break;
+                case MenuPage.Controls: DrawControlsMenu(); break;
+            }
+        }
+
+        void DrawPauseMenu()
+        {
+            Rect panel = CenteredPanel(460f, 440f);
+            MenuPanel(panel, new Color(0.04f, 0.03f, 0.09f, 1f));
+            Rect content = PanelContent(panel, 42f, 34f, 32f);
+            GUI.Label(new Rect(content.x, content.y, content.width, 40f), "일시정지", _center);
+
+            float y = content.y + 58f;
+            const float bh = 44f, gap = 10f;
+            if (GUI.Button(new Rect(content.x, y, content.width, bh), "계속하기", _button))
+                SetMenu(MenuPage.None);
+            y += bh + gap;
+            if (GUI.Button(new Rect(content.x, y, content.width, bh), "설정", _button))
+                OpenSubMenu(MenuPage.Settings);
+            y += bh + gap;
+            if (GUI.Button(new Rect(content.x, y, content.width, bh), "조작법", _button))
+                OpenSubMenu(MenuPage.Controls);
+            y += bh + gap;
+            if (GUI.Button(new Rect(content.x, y, content.width, bh), "타이틀 화면", _button))
+                SetMenu(MenuPage.Title);
+            y += bh + gap;
+            if (GUI.Button(new Rect(content.x, y, content.width, bh), "게임 종료", _buttonSmall))
+                Application.Quit();
+        }
+
+        void DrawSettingsMenu()
+        {
+            Rect panel = CenteredPanel(560f, 370f);
+            MenuPanel(panel, new Color(0.04f, 0.03f, 0.09f, 1f));
+            Rect content = PanelContent(panel, 44f, 34f, 32f);
+            GUI.Label(new Rect(content.x, content.y, content.width, 40f), "설정", _center);
+
+            float y = content.y + 66f;
+            GUI.Label(new Rect(content.x, y, 180f, 36f), "전체 화면", _title);
+            if (GUI.Button(new Rect(content.xMax - 190f, y - 4f, 190f, 42f),
+                    Screen.fullScreen ? "켜짐" : "꺼짐", _button))
+                Screen.fullScreen = !Screen.fullScreen;
+            y += 64f;
+
+            GUI.Label(new Rect(content.x, y, 180f, 36f), "전체 소리", _title);
+            if (GUI.Button(new Rect(content.xMax - 190f, y - 4f, 190f, 42f),
+                    _soundEnabled ? "켜짐" : "꺼짐", _button))
+            {
+                _soundEnabled = !_soundEnabled;
+                AudioListener.volume = _soundEnabled ? 1f : 0f;
+            }
+            y += 64f;
+
+            GUI.Label(new Rect(content.x, y, content.width, 24f),
+                "픽셀 폰트와 UI 배율은 화면 해상도에 맞춰 자동 적용됩니다.", _small);
+            if (GUI.Button(new Rect(content.center.x - 120f, content.yMax - 48f, 240f, 44f),
+                    "뒤로  (ESC)", _button))
+                SetMenu(_returnMenu);
+        }
+
+        void DrawControlsMenu()
+        {
+            float w = Mathf.Min(760f, Screen.width - 48f);
+            float h = Mathf.Min(560f, Screen.height - 40f);
+            Rect panel = CenteredPanel(w, h);
+            MenuPanel(panel, new Color(0.04f, 0.03f, 0.09f, 1f));
+            Rect content = PanelContent(panel, 44f, 34f, 32f);
+            GUI.Label(new Rect(content.x, content.y, content.width, 40f), "조작법", _center);
+
+            string[] lines =
+            {
+                "<color=#f8d776>이동·굴착</color>   WASD 이동 / 방향키 조준 / Space 길게 눌러 굴착",
+                "<color=#f8d776>상호작용</color>   E 시설 이용·보관·회수 / F 분리수거 시작",
+                "<color=#f8d776>장비</color>   Q 쓰레기 탐지기 / B 귀환 벨 / F 에너지 드링크",
+                "<color=#f8d776>분리수거</color>   숫자 1~5로 종류 선택 / ESC로 작업대 나가기",
+                "<color=#f8d776>도시광산</color>   H 자동 재활용 일꾼 / J 대량 운반 일꾼 고용",
+                "<color=#f8d776>유물</color>   C 도감 / 발굴한 유물은 지상 복원소에서 E",
+                "<color=#f8d776>화면</color>   E(상호작용 없을 때) / I 인벤토리 · TAB 도움말 · ESC 메뉴",
+                "<color=#9be89b>목표</color>   해가 지기 전에 지상으로 돌아와 일일 할당량 달성",
+            };
+
+            float y = content.y + 58f;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                GUI.Label(new Rect(content.x + 8f, y, content.width - 16f, 30f), lines[i], _label);
+                y += 36f;
+            }
+
+            if (GUI.Button(new Rect(content.center.x - 120f, content.yMax - 48f, 240f, 44f),
+                    "뒤로  (ESC)", _button))
+                SetMenu(_returnMenu);
+        }
+
+        void DrawInventoryOverlay()
+        {
+            var player = _game.Player;
+            if (player == null) return;
+
+            DrawMenuBackdrop();
+            float panelW = Mathf.Min(940f, Screen.width - 36f);
+            float panelH = Mathf.Min(620f, Screen.height - 36f);
+            Rect panel = CenteredPanel(panelW, panelH);
+            MenuPanel(panel, new Color(0.04f, 0.03f, 0.09f, 1f));
+            Rect content = PanelContent(panel, 34f, 28f, 26f);
+
+            GUI.Label(new Rect(content.x, content.y, content.width, 38f), "인벤토리", _center);
+            GUI.Label(new Rect(content.x, content.y + 39f, content.width, 22f),
+                $"슬롯 {player.InventoryUsedSlots} / {GameConfig.InventorySlotCapacity} · " +
+                $"쓰레기 부피 {player.InventoryVolume} / {player.BagCapacity} · 유물 {_game.Relics?.CarriedCount ?? 0}개",
+                _small);
+
+            float previewW = Mathf.Min(250f, content.width * 0.30f);
+            float gap = 24f;
+            float gridAreaW = content.width - previewW - gap;
+            const float cellGap = 4f;
+            const float hotbarSectionGap = 24f;
+            float cell = Mathf.Floor(Mathf.Min(58f,
+                (gridAreaW - cellGap * (GameConfig.InventoryColumns - 1)) / GameConfig.InventoryColumns));
+            float gridW = cell * GameConfig.InventoryColumns + cellGap * (GameConfig.InventoryColumns - 1);
+            float gridH = cell * GameConfig.InventoryRows + cellGap * (GameConfig.InventoryRows - 1)
+                + hotbarSectionGap;
+            float bodyY = content.y + 72f;
+
+            Rect preview = new Rect(content.x, bodyY, previewW, gridH);
+            DrawPlayerInventoryPreview(preview, player);
+
+            float gridX = content.xMax - gridW;
+            int total = player.InventoryUsedSlots;
+            int hotbarStart = Mathf.Max(0, total - HotbarSlotCount);
+            LootItem? hoveredLoot = null;
+            RelicDef hoveredRelic = null;
+
+            GUI.Label(new Rect(gridX, bodyY - 22f, gridW, 20f), "보관 공간 3줄", _small);
+            for (int row = 0; row < GameConfig.InventoryRows; row++)
+            {
+                for (int col = 0; col < GameConfig.InventoryColumns; col++)
+                {
+                    var rect = new Rect(gridX + col * (cell + cellGap),
+                        bodyY + row * (cell + cellGap) +
+                            (row == GameConfig.InventoryRows - 1 ? hotbarSectionGap : 0f),
+                        cell, cell);
+                    bool hotbarRow = row == GameConfig.InventoryRows - 1;
+                    Fill(rect, hotbarRow
+                        ? new Color(0.14f, 0.10f, 0.04f, 0.96f)
+                        : new Color(0.055f, 0.045f, 0.09f, 0.96f));
+                    Outline(rect, hotbarRow
+                        ? new Color(0.72f, 0.50f, 0.16f, 0.95f)
+                        : new Color(0.36f, 0.30f, 0.46f, 0.95f), 2f);
+
+                    int itemIndex;
+                    if (hotbarRow)
+                    {
+                        itemIndex = hotbarStart + col;
+                        if (itemIndex >= total) itemIndex = -1;
+                    }
+                    else
+                    {
+                        itemIndex = row * GameConfig.InventoryColumns + col;
+                        if (itemIndex >= hotbarStart) itemIndex = -1;
+                    }
+
+                    if (itemIndex < 0) continue;
+                    if (itemIndex < player.Inventory.Count)
+                    {
+                        LootItem item = player.Inventory[itemIndex];
+                        DrawLootSlotContents(rect, item);
+                        if (rect.Contains(Event.current.mousePosition)) hoveredLoot = item;
+                    }
+                    else
+                    {
+                        int relicIndex = itemIndex - player.Inventory.Count;
+                        var carried = _game.Relics?.Carried;
+                        if (carried == null || relicIndex < 0 || relicIndex >= carried.Count) continue;
+                        RelicDef def = RelicCatalog.Get(carried[relicIndex]);
+                        DrawRelicSlotContents(rect, def);
+                        if (rect.Contains(Event.current.mousePosition)) hoveredRelic = def;
+                    }
+                }
+            }
+
+            float hotbarLabelY = bodyY + (GameConfig.InventoryRows - 1) * (cell + cellGap) + 3f;
+            GUI.Label(new Rect(gridX, hotbarLabelY, gridW, 18f), "하단 인벤토리 바", _small);
+
+            float detailY = bodyY + gridH + 14f;
+            float detailH = Mathf.Clamp(content.yMax - detailY - 4f, 58f, 78f);
+            Rect detail = new Rect(gridX, detailY, gridW, detailH);
+            DrawInventoryDetail(detail, hoveredLoot, hoveredRelic);
+            GUI.Label(new Rect(content.x, content.yMax - 20f, previewW, 18f), "I 또는 ESC로 닫기", _small);
+        }
+
+        void DrawPlayerInventoryPreview(Rect rect, PlayerController player)
+        {
+            Panel(rect, new Color(0.06f, 0.05f, 0.10f, 0.98f));
+            GUI.Label(new Rect(rect.x + 14f, rect.y + 12f, rect.width - 28f, 24f), "현재 모습", _title);
+
+            Sprite sprite = player.CurrentSprite;
+            if (sprite == null)
+            {
+                Sprite[] frames = PlayerSpriteCatalog.Frames(PlayerVisualState.Walk, Facing.Down);
+                if (frames.Length > 0) sprite = frames[0];
+            }
+            float avatarSize = Mathf.Min(126f, rect.width - 54f);
+            var avatar = new Rect(rect.center.x - avatarSize * 0.5f, rect.y + 44f, avatarSize, avatarSize);
+            Fill(new Rect(avatar.x - 5f, avatar.y - 5f, avatar.width + 10f, avatar.height + 10f),
+                new Color(0.02f, 0.02f, 0.04f, 0.72f));
+            DrawSprite(avatar, sprite, player.CurrentSpriteFlipX);
+
+            int tier = _game.PickaxeQuests?.PickaxeTier ?? 1;
+            string pickaxe = _game.PickaxeQuests?.PickaxeName ?? "낡은 집게";
+            var toolRect = new Rect(rect.center.x - 42f, avatar.yMax + 8f, 84f, 56f);
+            DrawPickaxePreview(toolRect, tier);
+            GUI.Label(new Rect(rect.x + 12f, toolRect.yMax + 2f, rect.width - 24f, 22f),
+                $"{tier}단계 · {pickaxe}", _label);
+        }
+
+        void DrawPickaxePreview(Rect rect, int tier)
+        {
+            // 실제로 손에 드는 그림을 그대로 띄운다 — 미리보기와 인게임이 어긋나지 않게.
+            Sprite sprite = PickaxeSpriteCatalog.Preview(tier);
+            if (sprite == null || sprite.texture == null) return;
+
+            Rect cell = sprite.rect;
+            var uv = new Rect(cell.x / sprite.texture.width, cell.y / sprite.texture.height,
+                              cell.width / sprite.texture.width, cell.height / sprite.texture.height);
+
+            float size = Mathf.Min(rect.width, rect.height) * 0.94f;
+            var draw = new Rect(rect.x + (rect.width - size) * 0.5f,
+                                rect.y + (rect.height - size) * 0.5f, size, size);
+            GUI.DrawTextureWithTexCoords(draw, sprite.texture, uv, true);
+        }
+
+        void DrawInventoryDetail(Rect rect, LootItem? loot, RelicDef relic)
+        {
+            Panel(rect, new Color(0.04f, 0.035f, 0.07f, 0.96f));
+            Rect inner = new Rect(rect.x + 16f, rect.y + 10f, rect.width - 32f, rect.height - 18f);
+            if (loot.HasValue)
+            {
+                LootItem item = loot.Value;
+                GUI.Label(new Rect(inner.x, inner.y, inner.width, 22f), $"<b>{item.Name}</b>", _label);
+                GUI.Label(new Rect(inner.x, inner.y + 24f, inner.width, 20f),
+                    $"{MaterialInfo.DisplayName(item.Material)} · {item.Value:N0}원 · 부피 {item.Volume}", _small);
+            }
+            else if (relic != null)
+            {
+                GUI.Label(new Rect(inner.x, inner.y, inner.width, 22f), $"<b>유물 · {relic.Name}</b>", _label);
+                GUI.Label(new Rect(inner.x, inner.y + 24f, inner.width, 20f),
+                    $"{relic.Depth}층 · {relic.GroupName} · 복원 비용 {RelicSystem.RestoreCost(relic):N0}원", _small);
+            }
+            else
+            {
+                GUI.Label(new Rect(inner.x, inner.y + 12f, inner.width, 20f),
+                    "아이템이나 유물에 마우스를 올리면 상세 정보가 표시됩니다.", _small);
             }
         }
 
@@ -246,17 +841,11 @@ namespace DigGame
             var r = new Rect(MarginX, MarginY, PanelW, h);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
-            float x = r.x + 12f, w = r.width - 24f, y = r.y + 12f;
-
-            PollutionBar(new Rect(x, y, w, 18), _game.PollutionLevel);
-            y += 26;
+            Rect content = PanelContent(r);
+            float x = content.x, w = content.width, y = content.y;
 
             GUI.Label(new Rect(x, y, w, 20), $"이동속도  <b>{s.MoveSpeed:0.0}</b>", _label);
             y += 24;
-
-            Bar(new Rect(x, y, w, 18), s.Stamina / s.MaxStamina,
-                new Color32(86, 166, 240, 255), $"기력  {s.Stamina:0} / {s.MaxStamina:0}");
-            y += 26;
 
             var quests = _game.PickaxeQuests;
             string pickaxe = quests == null ? "1단계 집게" : $"{quests.PickaxeTier}단계 {quests.PickaxeName}";
@@ -299,7 +888,7 @@ namespace DigGame
             if (_skin != null)
             {
                 _skin.DrawBarFrame(r);
-                track = new Rect(r.x + 5f, r.y + 4f, r.width - 10f, r.height - 8f);
+                track = new Rect(r.x + 3f, r.y + 3f, r.width - 6f, r.height - 6f);
             }
             float slotW = (track.width - gap * (slots - 1)) / slots;
             for (int i = 0; i < slots; i++)
@@ -310,7 +899,9 @@ namespace DigGame
                     : new Color(1f, 1f, 1f, 0.13f));
             }
             GUI.Label(new Rect(r.x + 7, r.y - 1, r.width, r.height + 3),
-                $"오염도  {value} / {slots}칸" + (value > 0 ? $" · 굴착 {value * 100}% 느림" : ""), _small);
+                $"오염  {value} / {slots}" + (value > 0
+                    ? $" · 굴착 {Mathf.RoundToInt(value * GameConfig.PollutionDigSlowdownPerLevel * 100f)}% 느림"
+                    : ""), _small);
         }
 
         void Bar(Rect r, float t, Color color, string text)
@@ -319,7 +910,7 @@ namespace DigGame
             if (_skin != null)
             {
                 _skin.DrawBarFrame(r);
-                track = new Rect(r.x + 5f, r.y + 4f, r.width - 10f, r.height - 8f);
+                track = new Rect(r.x + 3f, r.y + 3f, r.width - 6f, r.height - 6f);
             }
             else Fill(r, new Color(1f, 1f, 1f, 0.13f));
             Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(t), track.height), color);
@@ -331,13 +922,14 @@ namespace DigGame
         // ==================================================================
         void DrawTopRight()
         {
-            float w = 330f;
+            float w = 380f;
             var r = new Rect(Screen.width - w - MarginX, MarginY, w, TopRightHeight);
             Panel(r, new Color(0f, 0f, 0f, 0.58f));
 
             bool warn = _game.TimeLeft < GameConfig.DayEndWarnSeconds;
 
-            float x = r.x + 12, y = r.y + 10, iw = r.width - 24;
+            Rect content = PanelContent(r);
+            float x = content.x, y = content.y, iw = content.width;
 
             GUI.Label(new Rect(x, y, iw, 24),
                 $"<b>{_game.Day}일차</b> / {GameConfig.DaysToWin}일", _title);
@@ -426,13 +1018,13 @@ namespace DigGame
             y += 24f;
         }
 
-        /// <summary>사각형 테두리 1px.</summary>
-        void Outline(Rect r, Color c)
+        /// <summary>픽셀 사각형 테두리.</summary>
+        void Outline(Rect r, Color c, float thickness = 1f)
         {
-            Fill(new Rect(r.x, r.y, r.width, 1f), c);
-            Fill(new Rect(r.x, r.y + r.height - 1f, r.width, 1f), c);
-            Fill(new Rect(r.x, r.y, 1f, r.height), c);
-            Fill(new Rect(r.x + r.width - 1f, r.y, 1f, r.height), c);
+            Fill(new Rect(r.x, r.y, r.width, thickness), c);
+            Fill(new Rect(r.x, r.y + r.height - thickness, r.width, thickness), c);
+            Fill(new Rect(r.x, r.y, thickness, r.height), c);
+            Fill(new Rect(r.x + r.width - thickness, r.y, thickness, r.height), c);
         }
 
         // ==================================================================
@@ -445,14 +1037,16 @@ namespace DigGame
 
             if (p.IsDigging)
             {
-                var pr = new Rect(Screen.width * 0.5f - 110, Screen.height - 92, 220, 18);
+                var pr = new Rect(Screen.width * 0.5f - 110,
+                    Screen.height - HotbarSlotSize - 105f, 220, 18);
                 Bar(pr, p.DigProgress01, new Color32(232, 192, 92, 255), "");
                 GUI.Label(new Rect(pr.x, pr.y - 22, pr.width, 20), "굴착 중...", _small);
             }
 
             if (!string.IsNullOrEmpty(p.BlockedReason))
             {
-                var br = new Rect(Screen.width * 0.5f - 230, Screen.height - 58, 460, 26);
+                var br = new Rect(Screen.width * 0.5f - 230,
+                    Screen.height - HotbarSlotSize - 105f, 460, 26);
                 Panel(br, new Color(0.42f, 0.10f, 0.10f, 0.88f));
                 Fill(new Rect(br.x + 7f, br.y + 6f, br.width - 14f, br.height - 12f),
                     new Color(0.42f, 0.10f, 0.10f, 0.36f));
@@ -542,13 +1136,14 @@ namespace DigGame
             var mine = p.MineHere();
             if (mine != null)
             {
-                float w = 330f;
+                float w = 380f;
                 // 정보 표시일 뿐 버튼이 없으므로 클릭 차단 영역으로 등록하지 않는다.
                 var mr = new Rect(Screen.width - w - MarginX,
-                    MarginY + TopRightHeight + 8f + RelicPanelHeight, w, 224);
+                    MarginY + TopRightHeight + 8f + RelicPanelHeight, w, 250);
                 Panel(mr, new Color(0.13f, 0.11f, 0.03f, 0.90f));
 
-                float x = mr.x + 12, y = mr.y + 10, iw = mr.width - 24;
+                Rect content = PanelContent(mr);
+                float x = content.x, y = content.y, iw = content.width;
                 GUI.Label(new Rect(x, y, iw, 22), mine.Label, _label); y += 24;
                 GUI.Label(new Rect(x, y, iw, 20), $"남은 매장량  {mine.Reserve}", _label); y += 20;
                 GUI.Label(new Rect(x, y, iw, 20),
@@ -580,7 +1175,7 @@ namespace DigGame
                 var r = _game.Relics;
                 if (r == null) return 0f;
                 if (r.CarriedCount == 0 && r.QueueCount == 0 && r.FoundCount == 0) return 0f;
-                return (r.QueueCount > 0 ? 82f : 56f) + 8f;
+                return (r.QueueCount > 0 ? 120f : 94f) + 8f;
             }
         }
 
@@ -590,19 +1185,20 @@ namespace DigGame
             if (r == null) return;
             if (RelicPanelHeight <= 0f) return;
 
-            float w = 330f;
+            float w = 380f;
             float h = RelicPanelHeight - 8f;
             var panel = new Rect(Screen.width - w - MarginX,
                 MarginY + TopRightHeight + 8f, w, h);
             Panel(panel, new Color(0.12f, 0.06f, 0.20f, 0.90f));
 
-            float x = panel.x + 12, y = panel.y + 8, iw = panel.width - 24;
+            Rect content = PanelContent(panel);
+            float x = content.x, y = content.y, iw = content.width;
             GUI.Label(new Rect(x, y, iw, 22),
                 $"<color=#dcaaff><b>유물 도감</b></color>  복원 {r.RestoredCount}/{r.TotalCount}" +
                 $" · 발굴 {r.FoundCount}", _label);
             y += 22;
             GUI.Label(new Rect(x, y, iw, 20),
-                $"등에 진 유물 {r.CarriedCount}/{GameConfig.RelicCarryLimit} · [C] 도감", _small);
+                $"유물 {r.CarriedCount}개 · 슬롯 {_game.Player.InventoryUsedSlots}/{GameConfig.InventorySlotCapacity} · [C] 도감", _small);
             y += 22;
 
             if (r.QueueCount > 0)
@@ -634,19 +1230,20 @@ namespace DigGame
             var defs = RelicCatalog.OfGroup(group);
             int rows = Mathf.Max(1, Mathf.CeilToInt(defs.Count / (float)Cols));
 
-            float w = Cols * CellW + (Cols - 1) * Gap + 40f;
-            float h = 152f + rows * (CellH + Gap) + 46f;
+            float w = Cols * CellW + (Cols - 1) * Gap + 80f;
+            float h = 180f + rows * (CellH + Gap) + 46f;
             var panel = new Rect(Screen.width * 0.5f - w * 0.5f,
                 Mathf.Max(20f, Screen.height * 0.5f - h * 0.5f), w, h);
             Panel(panel, new Color(0.07f, 0.06f, 0.11f, 0.97f));
             Outline(panel, new Color(0.68f, 0.52f, 0.92f, 0.65f));
 
-            float x = panel.x + 20f, y = panel.y + 14f, iw = panel.width - 40f;
+            Rect content = PanelContent(panel, 32f, 26f, 26f);
+            float x = content.x, y = content.y, iw = content.width;
 
             GUI.Label(new Rect(x, y, iw, 30),
                 $"<b>유물 도감</b>   복원 <color=#c79bff>{sys.RestoredCount}</color> / {sys.TotalCount}" +
                 $"   ·   발굴 {sys.FoundCount} / {sys.TotalCount}", _title);
-            if (GUI.Button(new Rect(panel.xMax - 108f, y - 2f, 88f, 28f), "닫기 (C)", _buttonSmall))
+            if (GUI.Button(new Rect(content.xMax - 88f, y - 2f, 88f, 28f), "닫기 (C)", _buttonSmall))
                 _showCodex = false;
             y += 32f;
 
@@ -765,12 +1362,13 @@ namespace DigGame
         {
             var s = _game.Player.Stats;
 
-            float w = 460f, h = 280f;
+            float w = 500f, h = 320f;
             var r = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.5f - h * 0.5f, w, h);
             Fill(new Rect(r.x - 3, r.y - 3, r.width + 6, r.height + 6), new Color(1f, 0.9f, 0.7f, 0.28f));
             Panel(r, new Color(0.08f, 0.09f, 0.12f, 0.96f));
 
-            float x = r.x + 20, y = r.y + 16, iw = r.width - 40;
+            Rect content = PanelContent(r, 32f, 28f, 26f);
+            float x = content.x, y = content.y, iw = content.width;
 
             GUI.Label(new Rect(x, y, iw, 26), "간이 강화 (낮)", _title);
             GUI.Label(new Rect(x + iw - 150, y + 4, 150, 22), $"보유금 {_game.Money:N0}원", _label);
@@ -826,7 +1424,8 @@ namespace DigGame
             var r = new Rect(Screen.width * 0.5f - w * 0.5f, Screen.height * 0.5f - h * 0.5f, w, h);
             Panel(r, new Color(0.04f, 0.04f, 0.10f, 0.96f));
 
-            float x = r.x, y = r.y, iw = r.width;
+            Rect content = PanelContent(r, 34f, 28f, 28f);
+            float x = content.x, y = content.y, iw = content.width;
 
             GUI.Label(new Rect(x, y, iw, 30),
                 $"{_game.Day}일차 밤 — 정비 시간", _big);
@@ -887,19 +1486,21 @@ namespace DigGame
             }
             y += 38;
 
-            float bodyH = r.yMax - y - 52f;
-            Panel(new Rect(x, y, iw, bodyH), new Color(1f, 1f, 1f, 0.42f));
+            float bodyH = content.yMax - y - 52f;
+            Rect body = new Rect(x, y, iw, bodyH);
+            Panel(body, new Color(1f, 1f, 1f, 0.42f));
+            Rect bodyContent = PanelContent(body, 26f, 20f, 20f);
 
             switch (_nightTab)
             {
-                case 0: DrawNightStats(x + 10, y + 8, iw - 20); break;
-                case 1: DrawNightGear(x + 10, y + 8, iw - 20); break;
-                case 2: DrawNightPets(x + 10, y + 8, iw - 20); break;
-                case 3: DrawNightFacility(x + 10, y + 8, iw - 20); break;
+                case 0: DrawNightStats(bodyContent.x, bodyContent.y, bodyContent.width); break;
+                case 1: DrawNightGear(bodyContent.x, bodyContent.y, bodyContent.width); break;
+                case 2: DrawNightPets(bodyContent.x, bodyContent.y, bodyContent.width); break;
+                case 3: DrawNightFacility(bodyContent.x, bodyContent.y, bodyContent.width); break;
             }
 
             // 다음 날
-            if (GUI.Button(new Rect(x + iw - 210, r.yMax - 42, 210, 36),
+            if (GUI.Button(new Rect(x + iw - 210, content.yMax - 42, 210, 36),
                     $"다음 날 시작  (Enter)", _button))
                 _game.StartNextDay();
         }
@@ -1045,80 +1646,97 @@ namespace DigGame
             var lines = _game.RecentLog(6);
             if (lines.Count == 0) return;
 
-            float h = lines.Count * 19 + 10;
-            var r = new Rect(MarginX, Screen.height - h - MarginY, 440, h);
+            float h = lines.Count * 19 + 44;
+            var r = new Rect(MarginX, Screen.height - h - MarginY, 480, h);
             Panel(r, new Color(0f, 0f, 0f, 0.5f));
 
+            Rect content = PanelContent(r, 26f, 20f, 18f);
             for (int i = 0; i < lines.Count; i++)
-                GUI.Label(new Rect(r.x + 8, r.y + 5 + i * 19, r.width - 16, 18), lines[i], _small);
+                GUI.Label(new Rect(content.x, content.y + i * 19, content.width, 18), lines[i], _small);
         }
 
         void DrawHelpPanel()
         {
-            // 하단 인벤토리 핫바와 겹치지 않게 그 위에 배치한다.
-            var r = new Rect(Screen.width * 0.5f - 255, Screen.height - 467, 510, 343);
-            Panel(r, new Color(0f, 0f, 0f, 0.58f));
-
-            float y = r.y + 8;
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "조작법  (Tab: 숨기기)", _label);
-            y += 24;
-
+            // 플레이 중에는 핵심 키만 작은 카드로 표시한다. 전체 설명은 ESC 메뉴에 둔다.
+            var r = new Rect(MarginX, MarginY + 280f, 460f, 188f);
+            Panel(r, new Color(0f, 0f, 0f, 0.72f));
+            Rect content = PanelContent(r, 26f, 22f, 18f);
+            float y = content.y;
+            GUI.Label(new Rect(content.x, y, content.width, 22), "간단 조작  (Tab: 닫기 · ESC: 메뉴)", _label);
+            y += 28f;
             string[] lines =
             {
-                "WASD — 이동 + 마지막 입력 방향의 동·서·남·북 한 칸 조준",
-                "Space 길게 — 표시된 인접 한 칸을 판다",
-                "E — 스폰 왼쪽에 투입소·강화소·복원소가 나란히 있다",
-                "Q 탐지기 · B 귀환 벨 · F 드링크 (투입소에서는 분류 시작)",
-                "투입소 E 보관 → F 분류 → 1~5 선택 · Esc 나가기",
-                "파랑: 푸석한 흙 · 금색: 고가품이 든 압축 폐기물층",
-                "연두: 매립 가스층 — 방호복이 있으면 피해를 막는다",
-                "입구 옆 ! 주민 퀘스트 — 지층별 유물을 모아 다음 집게 해금",
-                "힘 강화 — 지층 해금 없이 단계마다 모든 땅 굴착 속도 +20%",
-                "오염도 1칸마다 굴착 100% 느림 · 정상 분류 시 1칸 회복",
-                "초록 잔디 지반은 파괴 불가 · 스폰 바로 오른쪽 통로로 지하에 들어간다",
-                "도시광산 E: 보관/회수 · H 20초 자동 재활용 · J 대량 운반",
-                "땅속에 비치는 이미지 — 유물. 캐서 복원소(세 시설 중 가장 왼쪽) 앞에서 E",
-                "C — 유물 도감 (한 분류를 다 모으면 판매액 세트 보너스)",
-                "해가 지기 전에 꼭 지상으로! 지하에 있으면 가방을 몰수당한다",
-                "Shift+R — 새 게임"
+                "WASD 이동 · Space 굴착 · E 상호작용",
+                "Q 탐지기 · B 귀환 · F 드링크/분류",
+                "1~5 분리수거 · C 유물 도감 · E(상호작용 없을 때)/I 인벤토리",
+                "H 자동 재활용 · J 대량 운반",
+                "해 지기 전 지상 귀환 · 할당량 달성"
             };
             foreach (var l in lines)
             {
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 19), l, _small);
-                y += 19;
+                GUI.Label(new Rect(content.x, y, content.width, 19), l, _small);
+                y += 21f;
             }
         }
 
         // ==================================================================
-        // 화면 하단: 마인크래프트식 9칸 인벤토리 핫바
+        // 화면 하단: 하나의 긴 프레임을 9칸으로 나눈 인벤토리 핫바
         // ==================================================================
         void DrawInventoryHotbar()
         {
             var player = _game.Player;
             if (player == null) return;
 
-            float slotsW = HotbarSlotCount * HotbarSlotSize + (HotbarSlotCount - 1) * HotbarSlotGap;
+            float slotsW = HotbarSlotCount * HotbarSlotSize;
             float startX = Mathf.Round((Screen.width - slotsW) * 0.5f);
             float slotY = Screen.height - HotbarSlotSize - 18f;
-            var frame = new Rect(startX - 9f, slotY - 27f, slotsW + 18f, HotbarSlotSize + 36f);
+            var frame = new Rect(startX - 7f, slotY - 27f, slotsW + 14f, HotbarSlotSize + 34f);
+            const float meterGap = 8f;
+            const float meterHeight = 20f;
+            float meterY = frame.y - meterHeight - 8f;
+            float meterWidth = (frame.width - meterGap) * 0.5f;
 
-            Fill(frame, new Color(0.035f, 0.035f, 0.045f, 0.90f));
-            Fill(new Rect(frame.x, frame.y, frame.width, 3f), new Color(0.72f, 0.72f, 0.76f, 0.95f));
-            Fill(new Rect(frame.x, frame.yMax - 3f, frame.width, 3f), new Color(0.08f, 0.08f, 0.10f, 1f));
+            var stats = player.Stats;
+            if (stats != null)
+            {
+                Bar(new Rect(frame.x, meterY, meterWidth, meterHeight),
+                    stats.Stamina / stats.MaxStamina, new Color32(86, 166, 240, 255),
+                    $"기력  {stats.Stamina:0} / {stats.MaxStamina:0}");
+                PollutionBar(new Rect(frame.x + meterWidth + meterGap, meterY, meterWidth, meterHeight),
+                    _game.PollutionLevel);
+            }
 
-            int itemCount = player.Inventory.Count;
+            Fill(frame, new Color(0.055f, 0.045f, 0.09f, 0.96f));
+            Outline(frame, new Color(0.26f, 0.21f, 0.36f, 1f), 3f);
+            Outline(new Rect(frame.x + 3f, frame.y + 3f, frame.width - 6f, frame.height - 6f),
+                new Color(0.57f, 0.48f, 0.72f, 0.72f), 1f);
+            Fill(new Rect(frame.x + 5f, slotY - 3f, frame.width - 10f, 2f),
+                new Color(0.38f, 0.31f, 0.52f, 0.88f));
+
+            int itemCount = player.InventoryUsedSlots;
             int firstItem = Mathf.Max(0, itemCount - HotbarSlotCount);
             int hidden = firstItem;
-            string header = $"가방  {player.InventoryVolume} / {player.BagCapacity}";
+            string header = $"인벤토리  {itemCount} / {GameConfig.InventorySlotCapacity}칸" +
+                $"   ·   부피 {player.InventoryVolume} / {player.BagCapacity}";
             if (hidden > 0) header += $"   ·   앞쪽 {hidden}개 더 있음";
             GUI.Label(new Rect(frame.x + 8f, frame.y + 3f, frame.width - 16f, 20f), header, _small);
 
             LootItem? hovered = null;
+            RelicDef hoveredRelic = null;
+            int newestSlot = Mathf.Min(itemCount, HotbarSlotCount) - 1;
             for (int slot = 0; slot < HotbarSlotCount; slot++)
             {
-                float x = startX + slot * (HotbarSlotSize + HotbarSlotGap);
+                float x = startX + slot * HotbarSlotSize;
                 var r = new Rect(x, slotY, HotbarSlotSize, HotbarSlotSize);
-                DrawHotbarSlotFrame(r, slot == Mathf.Min(itemCount, HotbarSlotCount) - 1);
+                Fill(r, slot == newestSlot
+                    ? new Color(0.34f, 0.24f, 0.08f, 0.32f)
+                    : new Color(0.07f, 0.06f, 0.11f, 0.58f));
+                if (slot > 0)
+                    Fill(new Rect(r.x, r.y + 4f, 2f, r.height - 8f),
+                        new Color(0.35f, 0.29f, 0.46f, 0.92f));
+                if (slot == newestSlot)
+                    Fill(new Rect(r.x + 4f, r.yMax - 3f, r.width - 8f, 2f),
+                        new Color(0.95f, 0.72f, 0.20f, 0.95f));
 
                 int itemIndex = firstItem + slot;
                 if (itemIndex >= itemCount)
@@ -1127,72 +1745,105 @@ namespace DigGame
                     continue;
                 }
 
-                LootItem item = player.Inventory[itemIndex];
                 GUI.Label(new Rect(r.x + 3f, r.y + 2f, 14f, 13f), (slot + 1).ToString(), _micro);
-
-                var icon = new Rect(r.x + 17f, r.y + 5f, 22f, 20f);
-                Fill(new Rect(icon.x - 2f, icon.y - 2f, icon.width + 4f, icon.height + 4f),
-                    new Color(0f, 0f, 0f, 0.62f));
-                Sprite pixelArt = TrashSpriteCatalog.For(item);
-                if (pixelArt != null)
+                if (itemIndex < player.Inventory.Count)
                 {
-                    Fill(icon, new Color(item.Color.r, item.Color.g, item.Color.b, 0.28f));
-                    Rect spriteRect = pixelArt.rect;
-                    Texture2D texture = pixelArt.texture;
-                    var uv = new Rect(
-                        spriteRect.x / texture.width,
-                        spriteRect.y / texture.height,
-                        spriteRect.width / texture.width,
-                        spriteRect.height / texture.height);
-                    GUI.DrawTextureWithTexCoords(icon, texture, uv, true);
+                    LootItem item = player.Inventory[itemIndex];
+                    DrawLootSlotContents(r, item);
+                    if (r.Contains(Event.current.mousePosition)) hovered = item;
                 }
                 else
                 {
-                    Fill(icon, item.Color);
-                    GUI.Label(icon, MaterialGlyph(item.Material), _micro);
+                    int relicIndex = itemIndex - player.Inventory.Count;
+                    var carried = _game.Relics?.Carried;
+                    if (carried != null && relicIndex >= 0 && relicIndex < carried.Count)
+                    {
+                        RelicDef def = RelicCatalog.Get(carried[relicIndex]);
+                        DrawRelicSlotContents(r, def);
+                        if (r.Contains(Event.current.mousePosition)) hoveredRelic = def;
+                    }
                 }
-
-                GUI.Label(new Rect(r.x + r.width - 19f, r.y + 2f, 17f, 13f), $"V{item.Volume}", _micro);
-                GUI.Label(new Rect(r.x + 2f, r.y + 27f, r.width - 4f, 13f), ShortItemName(item.Name), _micro);
-                GUI.Label(new Rect(r.x + 2f, r.y + 40f, r.width - 4f, 13f), CompactMoney(item.Value), _micro);
-
-                if (r.Contains(Event.current.mousePosition)) hovered = item;
             }
 
             if (hovered.HasValue)
-                DrawInventoryTooltip(hovered.Value, slotY);
+                DrawInventoryTooltip(hovered.Value, meterY);
+            else if (hoveredRelic != null)
+                DrawRelicInventoryTooltip(hoveredRelic, meterY);
         }
 
-        void DrawHotbarSlotFrame(Rect r, bool newest)
+        void DrawLootSlotContents(Rect r, LootItem item)
         {
-            if (_skin != null)
+            var icon = new Rect(r.x + 17f, r.y + 5f, 22f, 20f);
+            Fill(new Rect(icon.x - 2f, icon.y - 2f, icon.width + 4f, icon.height + 4f),
+                new Color(0f, 0f, 0f, 0.62f));
+            Sprite pixelArt = TrashSpriteCatalog.For(item);
+            if (pixelArt != null)
             {
-                _skin.DrawSlot(r, newest);
-                return;
+                Fill(icon, new Color(item.Color.r, item.Color.g, item.Color.b, 0.28f));
+                DrawSprite(icon, pixelArt, false);
             }
-            Color border = newest
-                ? new Color(1f, 0.90f, 0.38f, 1f)
-                : new Color(0.70f, 0.70f, 0.74f, 1f);
-            Fill(r, border);
-            Fill(new Rect(r.x + 3f, r.y + 3f, r.width - 6f, r.height - 6f),
-                new Color(0.12f, 0.12f, 0.15f, 0.96f));
-            Fill(new Rect(r.x + 3f, r.y + 3f, r.width - 6f, 2f),
-                new Color(0.30f, 0.30f, 0.34f, 1f));
+            else
+            {
+                Fill(icon, item.Color);
+                GUI.Label(icon, MaterialGlyph(item.Material), _micro);
+            }
+
+            GUI.Label(new Rect(r.x + r.width - 19f, r.y + 2f, 17f, 13f), $"V{item.Volume}", _micro);
+            GUI.Label(new Rect(r.x + 2f, r.y + 27f, r.width - 4f, 13f), ShortItemName(item.Name), _micro);
+            GUI.Label(new Rect(r.x + 2f, r.y + 40f, r.width - 4f, 13f), CompactMoney(item.Value), _micro);
         }
 
-        void DrawInventoryTooltip(LootItem item, float slotY)
+        void DrawRelicSlotContents(Rect r, RelicDef def)
         {
-            float w = 310f, h = 48f;
+            if (def == null) return;
+            GUI.Label(new Rect(r.x + 3f, r.y + 2f, 16f, 13f), "유", _micro);
+            Sprite sprite = RelicSpriteCatalog.Buried(def);
+            if (sprite != null)
+                DrawSprite(new Rect(r.x + 16f, r.y + 5f, 24f, 24f), sprite, false);
+            GUI.Label(new Rect(r.x + 2f, r.y + 30f, r.width - 4f, 13f), ShortItemName(def.Name), _micro);
+            GUI.Label(new Rect(r.x + 2f, r.y + 42f, r.width - 4f, 12f), $"유물 · {def.Depth}층", _micro);
+        }
+
+        static void DrawSprite(Rect rect, Sprite sprite, bool flipX)
+        {
+            if (sprite == null || sprite.texture == null) return;
+            Rect sr = sprite.rect;
+            Texture2D texture = sprite.texture;
+            var uv = new Rect(sr.x / texture.width, sr.y / texture.height,
+                sr.width / texture.width, sr.height / texture.height);
+            if (flipX)
+            {
+                uv.x += uv.width;
+                uv.width = -uv.width;
+            }
+            GUI.DrawTextureWithTexCoords(rect, texture, uv, true);
+        }
+
+        void DrawInventoryTooltip(LootItem item, float anchorY)
+        {
+            float w = 350f, h = 70f;
             var r = new Rect(
                 Mathf.Clamp(Event.current.mousePosition.x - w * 0.5f, 8f, Screen.width - w - 8f),
-                slotY - h - 10f,
+                anchorY - h - 10f,
                 w,
                 h);
             Panel(r, new Color(0.025f, 0.025f, 0.04f, 0.96f));
-            Fill(new Rect(r.x, r.y, 3f, r.height), item.Color);
-            GUI.Label(new Rect(r.x + 11f, r.y + 4f, r.width - 20f, 20f), $"<b>{item.Name}</b>", _label);
-            GUI.Label(new Rect(r.x + 11f, r.y + 24f, r.width - 20f, 18f),
+            Fill(new Rect(r.x + 5f, r.y + 5f, 3f, r.height - 10f), item.Color);
+            GUI.Label(new Rect(r.x + 26f, r.y + 14f, r.width - 52f, 20f), $"<b>{item.Name}</b>", _label);
+            GUI.Label(new Rect(r.x + 26f, r.y + 36f, r.width - 52f, 18f),
                 $"{MaterialInfo.DisplayName(item.Material)} · {item.Value:N0}원 · 부피 {item.Volume}", _small);
+        }
+
+        void DrawRelicInventoryTooltip(RelicDef def, float anchorY)
+        {
+            float w = 350f, h = 70f;
+            var r = new Rect(
+                Mathf.Clamp(Event.current.mousePosition.x - w * 0.5f, 8f, Screen.width - w - 8f),
+                anchorY - h - 10f, w, h);
+            Panel(r, new Color(0.10f, 0.05f, 0.16f, 0.96f));
+            GUI.Label(new Rect(r.x + 22f, r.y + 13f, r.width - 44f, 20f), $"<b>유물 · {def.Name}</b>", _label);
+            GUI.Label(new Rect(r.x + 22f, r.y + 37f, r.width - 44f, 18f),
+                $"{def.Depth}층 · {def.GroupName} · 복원 비용 {RelicSystem.RestoreCost(def):N0}원", _small);
         }
 
         static string ShortItemName(string name)
@@ -1270,7 +1921,8 @@ namespace DigGame
                 Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), body);
                 Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), outline);
             }
-            GUI.Label(bubble, "가득 참!", _fullBubbleText);
+            GUI.Label(new Rect(bubble.x + 18f, bubble.y + 7f, bubble.width - 36f, bubble.height - 18f),
+                "가득 참!", _fullBubbleText);
         }
 
         void DrawQuestGiverLabel()
@@ -1289,30 +1941,43 @@ namespace DigGame
                 $"캐서 복원시켜줘! ({quests.Progress}/{quests.RequiredCount})";
 
             const float w = 286f, h = 64f;
-            float x = Mathf.Clamp(screen.x - w * 0.5f, 8f, Screen.width - w - 8f);
-            float y = Mathf.Clamp(Screen.height - screen.y - h - 8f, 8f, Screen.height - h - 18f);
+            float x = Mathf.Round(Mathf.Clamp(screen.x - w * 0.5f, 8f, Screen.width - w - 8f));
+            float y = Mathf.Round(Mathf.Clamp(Screen.height - screen.y - h - 8f, 8f, Screen.height - h - 18f));
             var bubble = new Rect(x, y, w, h);
 
-            if (_skin != null) _skin.DrawSpeechBubble(new Rect(bubble.x - 4f, bubble.y - 4f, bubble.width + 8f, bubble.height + 17f));
-            else
-            {
-                // 폴백 픽셀 말풍선: 어두운 테두리, 밝은 본체, 두 칸짜리 꼬리.
-                Fill(new Rect(bubble.x - 3f, bubble.y - 3f, bubble.width + 6f, bubble.height + 6f),
-                    new Color(0.12f, 0.08f, 0.16f, 0.96f));
-                Fill(bubble, new Color(1f, 0.97f, 0.88f, 0.98f));
-                float tailX = Mathf.Clamp(screen.x, bubble.x + 18f, bubble.xMax - 18f);
-                Fill(new Rect(tailX - 7f, bubble.yMax, 14f, 8f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
-                Fill(new Rect(tailX - 4f, bubble.yMax, 8f, 8f), new Color(1f, 0.97f, 0.88f, 0.98f));
-                Fill(new Rect(tailX - 3f, bubble.yMax + 8f, 6f, 5f), new Color(0.12f, 0.08f, 0.16f, 0.96f));
-            }
+            DrawThinQuestBubble(bubble, screen.x);
 
-            // 느낌표는 별도 보라색 배지에 크게 그려 가장 먼저 읽히게 한다.
-            var badge = new Rect(bubble.x + 8f, bubble.y + 9f, 46f, 46f);
-            if (_skin != null) _skin.DrawQuestBadge(badge);
-            else Fill(badge, new Color32(139, 63, 196, 255));
-            GUI.Label(badge, "!", _questBang);
-            GUI.Label(new Rect(bubble.x + 64f, bubble.y + 5f, bubble.width - 72f, bubble.height - 10f),
+            // 느낌표는 별도 박스를 쓰지 않고 말풍선 안에 기호만 배치한다.
+            GUI.Label(new Rect(bubble.x + 14f, bubble.y + 10f, 34f, 44f), "!", _questBang);
+            GUI.Label(new Rect(bubble.x + 52f, bubble.y + 13f, bubble.width - 72f, bubble.height - 26f),
                 message, _questBubbleText);
+        }
+
+        /// <summary>
+        /// 퀘스트 말풍선은 2px 전용 프레임을 쓴다. 큰 동굴 프레임이나 9-slice를
+        /// 축소하지 않아 작은 높이에서도 본문 영역을 침범하지 않는다.
+        /// </summary>
+        void DrawThinQuestBubble(Rect bubble, float targetScreenX)
+        {
+            Color outline = new Color32(48, 34, 60, 255);
+            Color body = new Color32(247, 229, 187, 255);
+            Color highlight = new Color32(255, 244, 214, 255);
+            Color shadow = new Color32(205, 170, 112, 255);
+            float tailX = Mathf.Round(Mathf.Clamp(targetScreenX, bubble.x + 18f, bubble.xMax - 18f));
+
+            // 두 칸씩 좁아지는 계단형 꼬리. 바깥선도 본체와 같은 2px 두께다.
+            Fill(new Rect(tailX - 7f, bubble.yMax - 2f, 14f, 5f), outline);
+            Fill(new Rect(tailX - 5f, bubble.yMax + 3f, 10f, 4f), outline);
+            Fill(new Rect(tailX - 3f, bubble.yMax + 7f, 6f, 4f), outline);
+            Fill(new Rect(tailX - 1f, bubble.yMax + 11f, 2f, 3f), outline);
+            Fill(new Rect(tailX - 5f, bubble.yMax - 2f, 10f, 4f), body);
+            Fill(new Rect(tailX - 3f, bubble.yMax + 2f, 6f, 4f), body);
+            Fill(new Rect(tailX - 1f, bubble.yMax + 6f, 2f, 4f), body);
+
+            Fill(bubble, outline);
+            Fill(new Rect(bubble.x + 2f, bubble.y + 2f, bubble.width - 4f, bubble.height - 4f), body);
+            Fill(new Rect(bubble.x + 3f, bubble.y + 3f, bubble.width - 6f, 1f), highlight);
+            Fill(new Rect(bubble.x + 3f, bubble.yMax - 4f, bubble.width - 6f, 1f), shadow);
         }
 
         void DrawRelicNames()

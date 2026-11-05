@@ -62,6 +62,19 @@ namespace DigGame.Editor
                 var firstLayerRelics = RelicCatalog.OfDepth(1);
                 for (int i = 0; i < GameConfig.PickaxeQuestRelicCounts[0]; i++)
                     game.Relics.Excavate(firstLayerRelics[i].Id);
+                Require(GameConfig.InventoryColumns == 9 && GameConfig.InventoryRows == 4 &&
+                    GameConfig.InventorySlotCapacity == 36,
+                    "인벤토리가 하단 바 포함 9x4 규격이 아닙니다.");
+                Require(game.Relics.Carried.Count == GameConfig.PickaxeQuestRelicCounts[0] &&
+                    game.Player.InventoryUsedSlots == game.Player.Inventory.Count + game.Relics.CarriedCount,
+                    "유물이 공용 인벤토리 슬롯에 집계되지 않습니다.");
+                int temporaryItems = GameConfig.InventorySlotCapacity - game.Player.InventoryUsedSlots;
+                for (int i = 0; i < temporaryItems; i++)
+                    game.Player.Inventory.Add(new LootItem($"슬롯 검증 {i}", 1, Color.white, 1, MaterialKind.General));
+                Require(game.Player.InventorySlotsFull &&
+                    !game.Player.TryReceiveStoredItem(new LootItem("초과 슬롯", 1, Color.white, 1, MaterialKind.General)),
+                    "36칸을 넘는 아이템이 공용 인벤토리에 들어갔습니다.");
+                game.Player.Inventory.RemoveRange(0, temporaryItems);
                 Require(quests.Progress == GameConfig.PickaxeQuestRelicCounts[0], "고유 유물 진행도 집계 실패.");
                 Require(quests.TryInteract() && quests.PickaxeTier == 2 && quests.Giver != firstGiver,
                     "집게 보상 또는 다음 주민 전환 실패.");

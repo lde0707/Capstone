@@ -19,6 +19,11 @@ namespace DigGame.Editor
         [MenuItem("DigGame/Recycling/Validate Domain and Integration")]
         public static void Run()
         {
+            Check(Math.Abs(GameConfig.PollutionDigSlowdownPerLevel - .20f) < .0001f,
+                "Pollution slowdown is not 20 percent per level");
+            Check(GameConfig.RecyclingFailurePollution ==
+                GameConfig.RecyclingSuccessPollutionRecovery * 2,
+                "Recycling failure pollution is not twice the success recovery");
             var q = new RecyclingQueue(); var rewards = new Rewards(); var pollution = new PollutionMeter();
             var s = new RecyclingSession(q,pollution,rewards);
             Check(!s.Open(),"Empty queue opened");
@@ -37,9 +42,13 @@ namespace DigGame.Editor
             Check(s.State==RecyclingState.Completed && pollution.Value==0,"Completion mismatch");
             s.Close(); q.Enqueue(new[]{Item(RecyclingCategory.Can),Item(RecyclingCategory.Paper)}); s.Open();
             s.Submit(RecyclingCategory.Pet); s.Close();
-            Check(q.Count==1 && pollution.Value==1 && rewards.Calls==5,"Failure/Escape lost state");
+            Check(q.Count==1 && pollution.Value==2 && s.LastResult.PollutionDelta==2 && rewards.Calls==5,
+                "Failure did not add twice the successful recovery amount");
             s.Open(); Check(s.Current(out var remaining) && remaining.Category==RecyclingCategory.Paper,"Resume FIFO mismatch");
-            s.Submit(RecyclingCategory.Paper); s.Close(); s.Advance(1);
+            s.Submit(RecyclingCategory.Paper);
+            Check(pollution.Value==1 && s.LastResult.PollutionDelta==-1,
+                "Success did not recover one pollution unit");
+            s.Close(); s.Advance(1);
             Check(rewards.Calls==6 && q.Count==0 && !s.Open(),"Closing transition duplicated payment");
             q.Enqueue(new[]{Item(RecyclingCategory.Specialist),Item(RecyclingCategory.Can)}); s.Open();
             Check(s.State==RecyclingState.Transition && rewards.Calls==7 && q.Count==1,"Specialist path mismatch");
@@ -54,7 +63,7 @@ namespace DigGame.Editor
             s.Advance(.1f);
             Check(s.State==RecyclingState.Transition && s.LastResult.TimedOut && !s.LastResult.Correct,
                 "Two-second timeout did not fail the item");
-            Check(rewards.Calls==7 && pollution.Value==1 && q.Count==0,
+            Check(rewards.Calls==7 && pollution.Value==2 && q.Count==0,
                 "Timeout paid a reward, skipped pollution, or kept the item");
 
             var capped = new RecyclingQueue();
@@ -85,14 +94,14 @@ namespace DigGame.Editor
                 Check(controller.Deposit() && controller.Session.Queue.IsFull && game.Player.Inventory.Count==0,
                     "Freed queue slot did not accept the remaining bag item");
                 controller.Open(); controller.Submit(RecyclingCategory.Can);
-                Check(controller.Session.Pollution.Value==1,"Wrong answer pollution missing");
+                Check(controller.Session.Pollution.Value==2,"Wrong answer pollution must be two units");
                 controller.Close();
                 controller.Session.Queue.Enqueue(new[]{Item(RecyclingCategory.Pet)}); controller.Open();
                 game.AddRelicIncome(game.BaseQuota,"검증");
                 typeof(GameManager).GetMethod("DoEndDay",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(game,null);
                 Check(!controller.IsOpen && controller.Session.Queue.Count==1 && game.State==GameState.Night,"Day end discarded queue");
                 game.StartNextDay();
-                Check(controller.Session.Queue.Count==1 && controller.Session.Pollution.Value==2,"Overnight pollution or queue retention failed");
+                Check(controller.Session.Queue.Count==1 && controller.Session.Pollution.Value==3,"Overnight pollution or queue retention failed");
                 PlaceAtStation(game); controller.Open(); game.GameOver("검증");
                 Check(!controller.IsOpen,"Game over left modal open");
                 var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(PrefabAssets.PathFor(PrefabId.RecyclingStation));
@@ -101,7 +110,7 @@ namespace DigGame.Editor
                 Check(new SerializedObject(prefab.GetComponent<RecyclingMinigameController>()).FindProperty("_viewPrefab").objectReferenceValue!=null,"View prefab missing");
             }
             finally { UnityEngine.Object.DestroyImmediate(root); UnityEngine.Random.state=previousRandom; }
-            Debug.Log("[DigGame] RECYCLING_VALIDATION_PASSED: five categories, FIFO, 30-item capacity/partial deposit, two-second timeout, rewards, pollution recovery/mistakes/overnight, clamp, lock, resume, specialist, proximity, modal, audio references.");
+            Debug.Log("[DigGame] RECYCLING_VALIDATION_PASSED: five categories, FIFO, 30-item capacity/partial deposit, two-second timeout, rewards, pollution success -1/failure +2/overnight +1, clamp, lock, resume, specialist, proximity, modal, audio references.");
         }
         public static void PlaceAtStation(GameManager game)
         {

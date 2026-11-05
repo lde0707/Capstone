@@ -57,6 +57,8 @@ namespace DigGame.Editor
 
             if (game == null || !game.Initialized || game.View == null || game.Player == null)
                 throw new System.InvalidOperationException("DigGame 편집 미리보기가 완전하게 생성되지 않았습니다.");
+            if (game.Hud == null || !game.Hud.TitleScreenOpen || !game.InputBlocked)
+                throw new System.InvalidOperationException("타이틀 화면이 초기 진입 화면이 아니거나 게임 입력을 차단하지 못했습니다.");
 
             var fog = preview.Find("WorldView/Smooth Fog");
             var fogRenderer = fog != null ? fog.GetComponent<SpriteRenderer>() : null;
@@ -85,6 +87,7 @@ namespace DigGame.Editor
             ValidateDayTiming();
             ValidateWorkerEconomy();
             ValidatePixelUi();
+            Debug.Log("[DigGame] 메뉴 UI — 타이틀 초기 진입 · 일시정지 중 게임 입력 차단 검증 완료");
         }
 
         static void OnSceneOpened(Scene scene, OpenSceneMode mode)
@@ -315,7 +318,7 @@ namespace DigGame.Editor
                 "Era/era_houses", "Era/era_restorers",
                 "Products/recycled_products", "Player/hero_down", "Player/hero_up",
                 "Player/hero_side", "Player/hero_dig_down", "Player/hero_dig_up",
-                "Player/hero_dig_side"
+                "Player/hero_dig_side", "Player/tongs"
             };
             for (int i = 0; i < pixelRefreshTextures.Length; i++)
             {
@@ -695,10 +698,91 @@ namespace DigGame.Editor
                 throw new System.InvalidOperationException("한글 픽셀 폰트 Galmuri11을 불러오지 못했습니다.");
 
             var skin = PixelUISkin.Load();
-            if (skin == null || skin.ButtonStyle.normal.background == null)
+            if (skin == null || skin.ButtonStyle.normal.background == null ||
+                skin.PanelStyle.normal.background == null || skin.HudPanelStyle.normal.background == null)
                 throw new System.InvalidOperationException("픽셀 UI 스킨을 생성하지 못했습니다.");
 
-            Debug.Log($"[DigGame] 픽셀 UI — 개별 이미지 {textures.Length}종 · Galmuri11 한글 폰트 검증 완료");
+            if (skin.ButtonStyle.border.left > 4 || skin.HudPanelStyle.border.left > 4 ||
+                skin.BarStyle.border.left > 3 || skin.PanelStyle.border.left > 6)
+                throw new System.InvalidOperationException("얇은 UI 프레임의 테두리 규격이 다시 두꺼워졌습니다.");
+
+            Texture2D titleScene = Resources.Load<Texture2D>("PixelUI/title_scene_background");
+            if (titleScene == null || titleScene.width < 1280 || titleScene.height < 720)
+                throw new System.InvalidOperationException("16:9 타이틀 장면 배경이 없거나 해상도가 너무 작습니다.");
+            float titleAspect = titleScene.width / (float)titleScene.height;
+            if (Mathf.Abs(titleAspect - 16f / 9f) > 0.03f || titleScene.filterMode != FilterMode.Point)
+                throw new System.InvalidOperationException("타이틀 장면은 16:9 Point 필터 픽셀 이미지여야 합니다.");
+
+            ValidateDesktopTitleLayout(font, skin);
+
+            Debug.Log($"[DigGame] 픽셀 UI — 개별 이미지 {textures.Length}종 · " +
+                $"타이틀 장면 {titleScene.width}x{titleScene.height} · " +
+                "PC 1920x1080 타이틀 안전 영역 및 한글 폭 검증 · " +
+                "게이지 3px / 버튼 4px / HUD 4px / 메뉴 6px 프레임 · Galmuri11 한글 폰트 검증 완료");
+        }
+
+        static void ValidateDesktopTitleLayout(Font font, PixelUISkin skin)
+        {
+            var checks = new[]
+            {
+                new { Name = "제목", Text = "쓰레기 집게 소년", FontSize = 72, Width = 696f, Height = 100f },
+                new { Name = "부제", Text = "쓰집소", FontSize = 30, Width = 696f, Height = 40f },
+                new { Name = "문구", Text = "땅을 파고 · 쓰레기를 집고 · 마을을 되살려라", FontSize = 24, Width = 696f, Height = 36f },
+                new { Name = "하단 안내", Text = "E / I 인벤토리 · ESC 메뉴 · TAB 간단 조작 안내", FontSize = 18, Width = 776f, Height = 28f }
+            };
+
+            for (int i = 0; i < checks.Length; i++)
+            {
+                var style = new GUIStyle
+                {
+                    font = font,
+                    fontSize = checks[i].FontSize,
+                    fontStyle = FontStyle.Bold,
+                    wordWrap = false
+                };
+                Vector2 size = style.CalcSize(new GUIContent(checks[i].Text));
+                if (size.x > checks[i].Width || size.y > checks[i].Height)
+                    throw new System.InvalidOperationException(
+                        $"PC 타이틀 {checks[i].Name} 글씨가 안전 영역을 벗어납니다: {size.x:0}x{size.y:0}");
+            }
+
+            GUIStyle buttonStyle = new GUIStyle(skin.ButtonStyle)
+            {
+                font = font,
+                fontSize = 22,
+                fontStyle = FontStyle.Bold,
+                wordWrap = false
+            };
+            string[] buttonTexts = { "게임 시작", "이어하기", "새 게임", "설정", "조작법" };
+            for (int i = 0; i < buttonTexts.Length; i++)
+            {
+                Vector2 size = buttonStyle.CalcSize(new GUIContent(buttonTexts[i]));
+                if (size.x > 378f || size.y > 44f)
+                    throw new System.InvalidOperationException(
+                        $"PC 타이틀 버튼 글씨가 잘립니다: {buttonTexts[i]} ({size.x:0}x{size.y:0})");
+            }
+
+            Vector2Int[] desktopResolutions =
+            {
+                new Vector2Int(1366, 768),
+                new Vector2Int(1680, 1050),
+                new Vector2Int(1920, 1080),
+                new Vector2Int(2560, 1080),
+                new Vector2Int(2560, 1440),
+                new Vector2Int(3840, 2160)
+            };
+            for (int i = 0; i < desktopResolutions.Length; i++)
+            {
+                float scale = Mathf.Min(
+                    desktopResolutions[i].x / GameHUD.TitleReferenceWidth,
+                    desktopResolutions[i].y / GameHUD.TitleReferenceHeight);
+                float canvasW = GameHUD.TitleReferenceWidth * scale;
+                float canvasH = GameHUD.TitleReferenceHeight * scale;
+                if (canvasW > desktopResolutions[i].x + 0.01f ||
+                    canvasH > desktopResolutions[i].y + 0.01f)
+                    throw new System.InvalidOperationException(
+                        $"PC 타이틀 안전 캔버스가 화면을 벗어납니다: {desktopResolutions[i].x}x{desktopResolutions[i].y}");
+            }
         }
     }
 }
