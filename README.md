@@ -1,5 +1,23 @@
 # Capstone
 
+<!-- WINDOWS-RELEASE-START -->
+## Windows에서 바로 플레이
+
+**[쓰레기 집게 소년 · Windows 실행 파일 다운로드](https://github.com/lde0707/Capstone/releases/tag/portfolio-windows-2026-11-14)**
+
+쓰레기를 수집하고 분리수거하며 탐험하는 게임.
+
+1. 위 Releases 페이지의 `TrashBoy-Windows-x64.zip`을 내려받습니다. `Source code` 파일은 실행 파일이 아닙니다.
+2. ZIP 전체를 한 폴더에 압축 해제합니다.
+3. `TrashBoy.exe`를 실행합니다. Unity 설치는 필요 없습니다.
+
+`TrashBoy_Data`, `UnityPlayer.dll`, 나머지 동봉 폴더를 함께 유지해야 합니다. Windows 64비트용이며 모바일·macOS에서는 실행되지 않습니다.
+
+**조작:** 키보드와 마우스를 사용합니다. 타이틀의 조작 방법과 게임 안의 키 안내를 확인하세요.
+
+[실행·검증 범위](PLAY.md) · [QA 포트폴리오](https://leedoeon.vercel.app/qa/index.html)
+<!-- WINDOWS-RELEASE-END -->
+
 픽셀 스타일 땅을 파며 쓰레기를 수집하고 재활용하는 Unity 게임입니다.
 
 ## 분리수거 미니게임
