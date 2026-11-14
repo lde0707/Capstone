@@ -3,7 +3,7 @@
 <!-- WINDOWS-RELEASE-START -->
 ## Windows에서 바로 플레이
 
-**[쓰레기 집게 소년 · Windows 실행 파일 다운로드](https://github.com/lde0707/Capstone/releases/tag/portfolio-windows-2026-11-14)**
+**[쓰레기 집게 소년 · Windows 실행 파일 다운로드](https://github.com/lde0707/portfolio-game-builds/releases/tag/trashboy-2026-11-14)**
 
 쓰레기를 수집하고 분리수거하며 탐험하는 게임.
 
