@@ -3,7 +3,7 @@
 <!-- WINDOWS-RELEASE-START -->
 ## Windows에서 바로 플레이
 
-**[쓰레기 집게 소년 · Windows 실행 파일 다운로드](https://github.com/lde0707/portfolio-game-builds/releases/tag/trashboy-2026-11-14)**
+**[쓰레기 집게 소년 · Windows 실행 파일 다운로드](https://github.com/lde0707/portfolio-game-builds/releases/tag/trashboy-2026-11-14-r2)**
 
 쓰레기를 수집하고 분리수거하며 탐험하는 게임.
 
@@ -53,3 +53,5 @@
 
 
 반복 효과는 상한이 있는 풀에서 재사용하고 분리수거 화면은 첫 사용 때 생성합니다. [런타임 재사용 구조](Docs/런타임_재사용_구조.md)에 수명·보관 정책과 검증을 정리했습니다.
+
+[2026-11-14 실제 플레이·수정 재검증](PLAYTEST.md)
